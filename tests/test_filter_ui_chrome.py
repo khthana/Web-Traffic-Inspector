@@ -6,17 +6,13 @@ from collections.abc import Iterator
 import pytest
 from chrome_support import find_chrome, serve
 from playwright.async_api import async_playwright
+from pipeline_factory import new_pipeline
 
 from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import ClickCaptured, NavigationOccurred, RequestStarted
-from inspector.correlator import Correlator
-from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.models import ElementInfo
-from inspector.pipeline import InspectorPipeline
-from inspector.redactor import Redactor
 from inspector.store import EventStore
-from inspector.summarizer import Summarizer
 
 pytestmark = pytest.mark.chrome
 
@@ -35,14 +31,7 @@ def inspector() -> Iterator[str]:
     """Inspector ที่มีประวัติอยู่แล้ว (ป้อนก่อนมี client จึงไม่ต้องข้าม thread)"""
     store = EventStore()
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(
-        store=store,
-        broadcaster=broadcaster,
-        redactor=Redactor(),
-        correlator=Correlator(window_ms=1500),
-        filters=FilterSettings(load_presets(PRESETS_DIR)),
-        summarizer=Summarizer(),
-    )
+    pipeline = new_pipeline(store, broadcaster)
     element = ElementInfo(tag="button", text="ดูรูปถัดไป", selector="button#gallery")
     for event in (
         ClickCaptured(tab_id="tab-1", page_url=PAGE, ts=T0, element=element),

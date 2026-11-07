@@ -280,7 +280,7 @@ body {
 /* ---------- Detail ---------- */
 .detail-head { padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
 .detail-line { display: flex; align-items: center; gap: .6rem; }
-.detail-line .ms { color: var(--muted); font-variant-numeric: tabular-nums; }
+.detail-line .ms, .detail-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
 .detail-url { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; margin: .4rem 0; }
 .detail-summary { font-size: 1.25em; font-weight: 600; margin: 0; }
 

@@ -43,13 +43,20 @@ def test_every_method_has_a_verb(harness: Harness, method: str, verb: str) -> No
         (200, "สำเร็จ"), (201, "สร้างแล้ว"), (204, "สำเร็จไม่มีเนื้อหา"), (206, "สำเร็จ"),
         (301, "ย้ายที่"), (302, "ย้ายที่"), (307, "ย้ายที่"), (304, "ใช้ของเดิม"),
         (400, "คำขอผิด"), (401, "ยังไม่ได้ล็อกอิน"), (403, "ไม่มีสิทธิ์"), (404, "ไม่พบ"),
-        (422, "ข้อมูลไม่ผ่าน validation"), (429, "ถี่เกินไป"), (409, "คำขอผิด"),
+        (422, "ข้อมูลไม่ผ่าน validation"), (429, "ถี่เกินไป"),
         (500, "เซิร์ฟเวอร์พัง"), (502, "เซิร์ฟเวอร์พัง"), (503, "เซิร์ฟเวอร์พัง"),
     ],
 )
 def test_every_status_has_a_meaning(harness: Harness, status: int, meaning: str) -> None:
     exchange = exchange_after(harness, started(), answered(status))
     assert exchange["summary"] == f'เบราว์เซอร์ส่งข้อมูลไป "cart/get" → เซิร์ฟเวอร์ตอบ {status} {meaning} ใน 182 ms'
+
+
+@pytest.mark.parametrize("status", [405, 408, 409, 410, 101])
+def test_status_without_a_known_meaning_shows_only_the_number(harness: Harness, status: int) -> None:
+    """405/408/410 ไม่ได้แปลว่า "คำขอผิด" เสมอ: ไม่รู้ความหมายก็ไม่เดา จะได้ไม่สอนผิด"""
+    exchange = exchange_after(harness, started(), answered(status))
+    assert exchange["summary"] == f'เบราว์เซอร์ส่งข้อมูลไป "cart/get" → เซิร์ฟเวอร์ตอบ {status} ใน 182 ms'
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,7 @@ from typing import Any
 import anyio
 import pytest
 from chrome_support import ChromeProcess, find_chrome
+from pipeline_factory import new_pipeline
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
@@ -15,12 +16,8 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
 from inspector.chrome import chrome_launch_command
-from inspector.correlator import Correlator
-from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
-from inspector.redactor import Redactor
 from inspector.store import EventStore
-from inspector.summarizer import Summarizer
 
 
 class Harness:
@@ -63,15 +60,7 @@ def build_harness(max_exchanges: int = 500, preset: str = "all") -> Iterator[Har
     """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges` และ `--preset`)"""
     store = EventStore(max_exchanges=max_exchanges)
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(
-        store=store,
-        broadcaster=broadcaster,
-        redactor=Redactor(),
-        correlator=Correlator(window_ms=1500),
-        filters=FilterSettings(load_presets(PRESETS_DIR), selected=preset),
-        summarizer=Summarizer(),
-        chrome_launch_command=chrome_launch_command("http://127.0.0.1:9222"),
-    )
+    pipeline = new_pipeline(store, broadcaster, preset, chrome_launch_command("http://127.0.0.1:9222"))
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)

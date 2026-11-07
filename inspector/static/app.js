@@ -40,11 +40,9 @@ class TimelineView {
     this.exchanges = new Map(); // exchange id → ข้อมูลล่าสุดของ Exchange
     this.selectedId = null;
     listElement.addEventListener("click", (event) => this.selectRow(event.target));
+    // Enter เท่านั้น: Space สงวนไว้ให้ "หยุด/เริ่มต่อ" (SPEC 6.3)
     listElement.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        this.selectRow(event.target);
-      }
+      if (event.key === "Enter") this.selectRow(event.target);
     });
   }
 
@@ -405,7 +403,8 @@ const HTTP_VERSION = "HTTP/1.1"; // Chrome ไม่บอกเวอร์ช�
 const JSON_OPEN_DEPTH = 2;
 const JSON_ARRAY_PREVIEW = 10;
 
-/** สร้าง element พร้อม class และลูก (ข้อความใส่เป็น text node เสมอ จึงไม่มี HTML injection) */
+/** el = "element": สร้าง element พร้อม class และลูก (ข้อความใส่เป็น text node เสมอ จึงไม่มี HTML injection)
+ *  ใช้บ่อยมากใน Detail จึงตั้งชื่อสั้น */
 function el(tag, className, ...children) {
   const element = document.createElement(tag);
   if (className) element.className = className;
@@ -420,9 +419,10 @@ function redactedChip() {
 /** JSON tree: ย่อ/ขยายได้ เปิดไว้ JSON_OPEN_DEPTH ชั้นแรก สีตามชนิดข้อมูล และสลับเป็นข้อความดิบได้
  *  สอนแนวคิด: recursion — object/array ซ้อนกันกี่ชั้นก็วาดได้ด้วยเมธอดเดียวที่เรียกตัวเอง */
 class JsonViewer {
-  constructor(value) {
+  /** rawText คือ body เดิม: โหมดดิบแสดงตามนี้ ไม่ใช้ค่าที่ parse แล้ว (เลขที่ใหญ่เกิน 2^53 จะได้ไม่เพี้ยน) */
+  constructor(value, rawText) {
     this.tree = el("ul", "json-tree", this.node(null, value, 0));
-    this.raw = el("pre", "raw-body", JSON.stringify(value, null, 2));
+    this.raw = el("pre", "raw-body", rawText);
     this.raw.hidden = true;
     const toggle = el("button", "raw-toggle", "ดูข้อความดิบ");
     toggle.type = "button";
@@ -464,8 +464,10 @@ class JsonViewer {
 /** แสดง body ตามชนิด: JSON เป็น tree, form เป็นตาราง, อ่านไม่ได้ก็บอกเหตุผล */
 function bodyView(part) {
   const box = el("div", "body-view");
-  if (part.body_error) return el("div", "body-view", el("p", "body-note", part.body_error));
-  if (part.body == null || part.body === "") return el("div", "body-view", el("p", "body-note", "ไม่มี body"));
+  if (part.body_error || !part.body) {
+    box.append(el("p", "body-note", part.body_error || "ไม่มี body"));
+    return box;
+  }
   if (part.body_unscanned) {
     box.append(el("p", "flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
   }
@@ -479,7 +481,7 @@ function bodyView(part) {
 function bodyContent(part) {
   if (part.body_kind === "json") {
     try {
-      return new JsonViewer(JSON.parse(part.body)).element;
+      return new JsonViewer(JSON.parse(part.body), part.body).element;
     } catch {
       // ถูกตัดที่ 64 KB จึง parse ไม่ได้: แสดงข้อความดิบแทน
     }
@@ -540,16 +542,29 @@ function rawHttp(firstLine, headers, part) {
   return el("pre", "raw-http", [firstLine, ...lines, "", body].join("\n"));
 }
 
-function field(label, ...value) {
+/** หนึ่งแถวของ <dl>: ชื่อ (dt) + ค่า (dd) */
+function definitionRow(label, ...value) {
   return el("div", "field", el("dt", null, label), el("dd", null, ...value));
 }
 
+/** แต่ละแท็บรู้วิธีวาดเนื้อหาของตัวเอง เพิ่มแท็บใหม่ (คลิก, โค้ด) ได้ที่นี่ที่เดียว */
 const DETAIL_TABS = [
-  { id: "overview", label: "ภาพรวม" },
-  { id: "request", label: "ขาออก (Request)" },
-  { id: "response", label: "ขาเข้า (Response)" },
-  { id: "raw", label: "ดิบ (Raw)" },
+  { id: "overview", label: "ภาพรวม", render: (view) => [el("div", "overview", view.requestSide(), view.responseSide())] },
+  { id: "request", label: "ขาออก (Request)", render: (view) => view.requestPanel() },
+  { id: "response", label: "ขาเข้า (Response)", render: (view) => view.responsePanel() },
+  { id: "raw", label: "ดิบ (Raw)", render: (view) => view.rawPanel() },
 ];
+
+/** ขาออกและขาเข้าหน้าตาเหมือนกัน: บรรทัดแรก + headers + body */
+function messagePanel(firstLine, part) {
+  return [firstLine, el("h3", null, "Headers"), headersTable(part.headers), el("h3", null, "Body"), bodyView(part)];
+}
+
+/** ส่วนของ Exchange ที่ Detail แสดง (การซ่อนตาม Preset ไม่เกี่ยว) ใช้เทียบว่าต้องวาดใหม่ไหม */
+function shownPart(exchange) {
+  const { hidden, hidden_reason, ...shown } = exchange;
+  return JSON.stringify(shown);
+}
 
 /** คอลัมน์ขวา: หัว Detail + แท็บ ภาพรวม / ขาออก / ขาเข้า / ดิบ
  *  สอนแนวคิด: state ใน object — จำแท็บที่เลือกไว้ (this.tab) แม้จะเปลี่ยนไปดู Exchange อื่น */
@@ -561,7 +576,9 @@ class DetailView {
     this.render();
   }
 
+  /** snapshot หรือ update ที่ไม่เปลี่ยนสิ่งที่ Detail แสดงจะไม่วาดใหม่ โหนด JSON ที่กางไว้และโหมดดิบจึงไม่หาย */
   show(exchange) {
+    if (exchange && this.exchange && shownPart(exchange) === shownPart(this.exchange)) return;
     this.exchange = exchange;
     this.render();
   }
@@ -584,7 +601,8 @@ class DetailView {
     return el(
       "header",
       "detail-head",
-      el("div", "detail-line", methodBadge(exchange.request.method), statusBadge(exchange), textSpan("ms", durationText(exchange))),
+      el("div", "detail-line", methodBadge(exchange.request.method), statusBadge(exchange), textSpan("ms", durationText(exchange)),
+        textSpan("detail-clock", clockTime(exchange.started_at))),
       el("p", "detail-url", exchange.request.url),
       el("p", "detail-summary", exchange.summary),
     );
@@ -605,24 +623,27 @@ class DetailView {
   }
 
   panel() {
+    return DETAIL_TABS.find((tab) => tab.id === this.tab).render(this);
+  }
+
+  requestPanel() {
+    const request = this.exchange.request;
+    return messagePanel(el("p", "request-line", requestLine(request)), request);
+  }
+
+  responsePanel() {
+    const response = this.exchange.response;
+    if (!response) return [noResponseNote(this.exchange)];
+    return messagePanel(el("p", "status-line", statusLine(response)), response);
+  }
+
+  rawPanel() {
     const { request, response } = this.exchange;
-    if (this.tab === "request") {
-      return [el("p", "request-line", requestLine(request)), el("h3", null, "Headers"), headersTable(request.headers),
-        el("h3", null, "Body"), bodyView(request)];
-    }
-    if (this.tab === "response") {
-      if (!response) return [noResponseNote(this.exchange)];
-      return [el("p", "status-line", statusLine(response)), el("h3", null, "Headers"), headersTable(response.headers),
-        el("h3", null, "Body"), bodyView(response)];
-    }
-    if (this.tab === "raw") {
-      return [
-        el("h3", null, "ขาออก (Request)"), rawHttp(requestLine(request), request.headers, request),
-        el("h3", null, "ขาเข้า (Response)"),
-        response ? rawHttp(statusLine(response), response.headers, response) : noResponseNote(this.exchange),
-      ];
-    }
-    return [el("div", "overview", this.requestSide(), this.responseSide())];
+    return [
+      el("h3", null, "ขาออก (Request)"), rawHttp(requestLine(request), request.headers, request),
+      el("h3", null, "ขาเข้า (Response)"),
+      response ? rawHttp(statusLine(response), response.headers, response) : noResponseNote(this.exchange),
+    ];
   }
 
   requestSide() {
@@ -632,8 +653,8 @@ class DetailView {
       "section",
       "side side-request",
       el("h3", null, "ขาออก (Request)"),
-      el("dl", null, field("method", methodBadge(request.method)), field("path", el("code", null, request.path)),
-        field("query", query.length ? keyValueTable("query-table", query) : "—")),
+      el("dl", null, definitionRow("method", methodBadge(request.method)), definitionRow("path", el("code", null, request.path)),
+        definitionRow("query", query.length ? keyValueTable("query-table", query) : "—")),
       el("h4", null, "body"),
       bodyView(request),
     );
@@ -647,8 +668,8 @@ class DetailView {
       return side;
     }
     side.append(
-      el("dl", null, field("status", statusBadge(this.exchange), ` ${response.status_text}`),
-        field("content-type", el("code", null, contentType(response.headers)))),
+      el("dl", null, definitionRow("status", statusBadge(this.exchange), ` ${response.status_text}`),
+        definitionRow("content-type", el("code", null, contentType(response.headers)))),
       el("h4", null, "body"),
       bodyView(response),
     );

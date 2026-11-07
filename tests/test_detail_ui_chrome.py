@@ -3,28 +3,27 @@
 
 import asyncio
 import json
+import re
 from collections.abc import Iterator
 
 import pytest
 from chrome_support import find_chrome, serve
 from playwright.async_api import Page, async_playwright
 
+from pipeline_factory import new_pipeline
+
 from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import ClickCaptured, RequestStarted, ResponseReceived
-from inspector.correlator import Correlator
-from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.models import ElementInfo
-from inspector.pipeline import InspectorPipeline
-from inspector.redactor import Redactor
 from inspector.store import EventStore
-from inspector.summarizer import Summarizer
 
 pytestmark = pytest.mark.chrome
 
 T0 = 1_700_000_000_000.0
 PAGE = "https://shop.example/"
 API = "https://shop.example/api/v1"
+ORDER_REPLY = '{"id": 12345678901234567890, "price": 18990.5}'  # id ใหญ่เกินที่ JavaScript เก็บได้ตรงๆ
 ORDER = {
     "user": {"name": "สมชาย", "password": "hunter2", "delivery": {"city": "กรุงเทพ"}},
     "items": list(range(24)),
@@ -37,14 +36,7 @@ ORDER = {
 def inspector() -> Iterator[str]:
     store = EventStore()
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(
-        store=store,
-        broadcaster=broadcaster,
-        redactor=Redactor(),
-        correlator=Correlator(window_ms=1500),
-        filters=FilterSettings(load_presets(PRESETS_DIR)),
-        summarizer=Summarizer(),
-    )
+    pipeline = new_pipeline(store, broadcaster)
     element = ElementInfo(tag="button", text="สั่งซื้อ", selector="button#buy")
     json_headers = {"content-type": "application/json"}
     for event in (
@@ -56,7 +48,7 @@ def inspector() -> Iterator[str]:
         ),
         ResponseReceived(
             request_key="order", ts=T0 + 192, status=201, status_text="Created", headers=json_headers,
-            body='{"id": 7, "price": 18990.5}',
+            body=ORDER_REPLY,
         ),
         RequestStarted(
             request_key="login", tab_id="tab-1", page_url=PAGE, ts=T0 + 20, method="POST", url=f"{API}/login",
@@ -102,6 +94,7 @@ def test_selecting_an_exchange_shows_its_details(inspector: str) -> None:
             assert await head.locator(".detail-url").text_content() == f"{API}/orders?ref=home&ref=ad"
             assert await head.locator(".badge.status-2xx").text_content() == "201"
             assert "182 ms" in (await head.text_content() or "")
+            assert re.search(r"\d{2}:\d{2}:\d{2}", await head.locator(".detail-clock").text_content() or "")
             assert "สร้างแล้ว" in (await head.locator(".detail-summary").text_content() or "")
             assert await order.get_attribute("aria-selected") == "true"
 
@@ -118,10 +111,20 @@ def test_selecting_an_exchange_shows_its_details(inspector: str) -> None:
             assert await items.locator(".json-more").text_content() == "…อีก 14 รายการ"
             assert await tree.locator(".json-boolean").all_text_contents() == ["true"]
             assert await tree.locator(".json-null").all_text_contents() == ["null"]
-            assert await page.locator(".side-response .json-number").all_text_contents() == ["7", "18990.5"]
+            assert (await page.locator(".side-response .json-number").all_text_contents())[1] == "18990.5"
+
+            # snapshot ใหม่ (เปลี่ยน Preset) ต้องไม่ทำให้โหนดที่กางไว้หุบ
+            await tree.locator("summary", has_text="delivery").click()
+            await page.select_option("#preset", "advice")
+            await page.locator(".exchange.is-hidden").first.wait_for(state="attached")
+            assert await tree.locator("summary", has_text="delivery").locator("..").get_attribute("open") == ""
+            await page.select_option("#preset", "all")
+            await page.wait_for_function("document.querySelectorAll('.exchange.is-hidden').length === 0")
 
             await page.locator(".side-request .raw-toggle").click()
             assert '"password": "••••"' in (await page.locator(".side-request pre.raw-body").text_content() or "")
+            await page.locator(".side-response .raw-toggle").click()
+            assert await page.locator(".side-response pre.raw-body").text_content() == ORDER_REPLY  # ข้อความเดิมไม่เพี้ยน
 
             # แท็บขาออก: request line + headers (ค่าที่ซ่อนมีกุญแจ)
             await page.click(".tab >> text=ขาออก (Request)")
@@ -129,8 +132,13 @@ def test_selecting_an_exchange_shows_its_details(inspector: str) -> None:
             assert await page.locator(".headers-table th", has_text="authorization").count() == 1
             assert await page.locator(".headers-table tr", has_text="authorization").locator(".flag-lock").count() == 1
 
-            # เปลี่ยน Exchange แล้วยังอยู่แท็บเดิม: form เป็นตาราง
-            await page.locator(".exchange", has_text="/api/v1/login").click()
+            # เปลี่ยน Exchange ด้วยคีย์บอร์ด (Enter) แล้วยังอยู่แท็บเดิม: form เป็นตาราง
+            login = page.locator(".exchange", has_text="/api/v1/login")
+            await login.focus()
+            await page.keyboard.press("Space")  # Space สงวนไว้ให้ หยุด/เริ่มต่อ (SPEC 6.3)
+            assert await login.get_attribute("aria-selected") == "false"
+            await page.keyboard.press("Enter")
+            assert await login.get_attribute("aria-selected") == "true"
             assert await texts(page, ".tab[aria-selected=true]") == ["ขาออก (Request)"]
             assert await texts(page, ".form-table td") == ["q", "โน้ต 15", "password", "ซ่อนไว้"]
 

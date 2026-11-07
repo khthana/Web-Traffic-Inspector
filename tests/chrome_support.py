@@ -19,16 +19,12 @@ from typing import Any
 from fastapi import FastAPI
 
 import uvicorn
+from pipeline_factory import new_pipeline
 
 from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector
-from inspector.correlator import Correlator
-from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
-from inspector.pipeline import InspectorPipeline
-from inspector.redactor import Redactor
 from inspector.store import EventStore
-from inspector.summarizer import Summarizer
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -112,14 +108,7 @@ class LiveInspector:
     """Inspector ทั้งตัว (ไม่มี FastAPI) ที่ต่อกับ Chrome จริง"""
 
     def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
-        self.pipeline = InspectorPipeline(
-            store=EventStore(),
-            broadcaster=Broadcaster(),
-            redactor=Redactor(),
-            correlator=Correlator(window_ms=1500),
-            filters=FilterSettings(load_presets(PRESETS_DIR)),
-            summarizer=Summarizer(),
-        )
+        self.pipeline = new_pipeline(EventStore(), Broadcaster())
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(
             cdp_url, on_context=capture.attach, on_status=self.pipeline.set_chrome_connected, retry_s=0.5
