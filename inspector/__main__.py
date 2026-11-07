@@ -14,6 +14,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.demo import feed_demo_events
 from inspector.pipeline import InspectorPipeline
+from inspector.redactor import Redactor
 from inspector.store import EventStore
 
 HOST = "127.0.0.1"
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
 async def run(args: argparse.Namespace) -> None:
     store = EventStore(max_exchanges=args.max_exchanges)
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(store=store, broadcaster=broadcaster)
+    pipeline = InspectorPipeline(store=store, broadcaster=broadcaster, redactor=Redactor())
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=args.port, log_level="warning"))
 

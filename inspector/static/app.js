@@ -66,6 +66,7 @@ class TimelineView {
     li.append(
       badge(exchange.request.method, `method-${exchange.request.method}`),
       textSpan("path", exchange.request.path, exchange.request.url),
+      redactionFlags(exchange),
       statusBadge(exchange),
       textSpan("ms", exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`),
     );
@@ -87,6 +88,32 @@ class StatusView {
       ? `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`
       : "ไม่พบ Chrome";
   }
+}
+
+const MASK = "••••"; // ตรงกับ MASK ใน redactor.py
+
+const LOCK_ICON = `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" focusable="false">
+  <path fill="currentColor" d="M5 7V5a3 3 0 0 1 6 0v2h1a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h1Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z"/>
+</svg>`;
+
+/** ป้ายบอกเรื่อง Redaction: กุญแจ = มีค่าลับถูกซ่อน, ป้ายเหลือง = มี body ที่ไม่ได้ตรวจ */
+function redactionFlags(exchange) {
+  const span = document.createElement("span");
+  span.className = "flags";
+  if (JSON.stringify(exchange).includes(MASK)) {
+    const lock = document.createElement("span");
+    lock.className = "flag-lock";
+    lock.innerHTML = LOCK_ICON;
+    lock.title = "มีข้อมูลลับถูกซ่อนไว้";
+    lock.setAttribute("role", "img");
+    lock.setAttribute("aria-label", "มีข้อมูลลับถูกซ่อนไว้");
+    span.append(lock);
+  }
+  const parts = [exchange.request, exchange.response].filter(Boolean);
+  if (parts.some((part) => part.body && part.body_unscanned)) {
+    span.append(textSpan("flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ", "body นี้ไม่ใช่ JSON หรือ form จึงไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
+  }
+  return span;
 }
 
 function badge(text, className) {

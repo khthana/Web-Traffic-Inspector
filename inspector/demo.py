@@ -31,7 +31,7 @@ async def feed_demo_events(pipeline: InspectorPipeline, interval_s: float = 2.0)
                 method=method,
                 url=f"https://www.advice.co.th/_advice-api/api/v1.0.0/{name}",
                 resource_type="fetch",
-                headers={"content-type": "application/json"},
+                headers={"content-type": "application/json", "cookie": "PHPSESSID=demo-session-value"},
                 post_data='{"page": 1}' if method == "POST" else None,
             )
         )

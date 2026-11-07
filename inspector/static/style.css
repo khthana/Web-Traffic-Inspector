@@ -107,7 +107,7 @@ body {
 
 .exchange {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   gap: .6rem;
   align-items: center;
   padding: .45rem .5rem;
@@ -122,6 +122,17 @@ body {
   text-overflow: ellipsis;
   direction: rtl;          /* ตัดให้สั้นจากซ้าย ส่วนท้ายของ path สำคัญกว่า */
   text-align: left;
+}
+
+.flags { display: inline-flex; align-items: center; gap: .35rem; }
+.flag-lock { color: var(--muted); display: inline-flex; }
+.flag-unscanned {
+  font-size: .75em;
+  padding: 0 .4em;
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  color: var(--warn);
+  white-space: nowrap;
 }
 
 .exchange .ms { color: var(--muted); font-size: .85em; font-variant-numeric: tabular-nums; }

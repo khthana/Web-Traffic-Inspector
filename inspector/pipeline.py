@@ -9,14 +9,16 @@ from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent, RequestFailed, RequestStarted, ResponseReceived
 from inspector.http_parts import body_kind, split_url
 from inspector.models import HttpExchange, HttpRequest, HttpResponse, InspectorStatus
+from inspector.redactor import Redactor
 from inspector.store import EventStore
 
 
 class InspectorPipeline:
-    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → store → broadcast"""
+    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → store → broadcast"""
 
-    def __init__(self, store: EventStore, broadcaster: Broadcaster) -> None:
+    def __init__(self, store: EventStore, broadcaster: Broadcaster, redactor: Redactor) -> None:
         self._store = store
+        self._redactor = redactor
         self._broadcaster = broadcaster
         self._next_id = 0
         self._pending: dict[str, str] = {}  # request_key → exchange id
@@ -40,22 +42,27 @@ class InspectorPipeline:
         }
 
     def _on_request(self, event: RequestStarted) -> None:
+        # Redaction ทำตรงนี้ ก่อนสร้าง Exchange ค่าจริงจึงไม่เคยถูกเก็บหรือส่งออกไป
+        redact = self._redactor
         host, path, query = split_url(event.url)
+        kind = body_kind(event.headers, event.post_data)
+        body, unscanned = redact.body(event.post_data, kind)
         exchange = HttpExchange(
             id=self._new_id(),
             tab_id=event.tab_id,
-            page_url=event.page_url,
+            page_url=redact.url(event.page_url),
             resource_type=event.resource_type,
             started_at=event.ts,
             request=HttpRequest(
                 method=event.method,
-                url=event.url,
+                url=redact.url(event.url),
                 host=host,
                 path=path,
-                query=query,
-                headers=dict(event.headers),
-                body=event.post_data,
-                body_kind=body_kind(event.headers, event.post_data),
+                query=redact.query(query),
+                headers=redact.headers(event.headers),
+                body=body,
+                body_kind=kind,
+                body_unscanned=unscanned,
             ),
         )
         self._pending[event.request_key] = exchange.id
@@ -66,12 +73,15 @@ class InspectorPipeline:
         exchange = self._take_pending(event.request_key)
         if exchange is None:
             return
+        kind = body_kind(event.headers, event.body)
+        body, unscanned = self._redactor.body(event.body, kind)
         response = HttpResponse(
             status=event.status,
             status_text=event.status_text,
-            headers=dict(event.headers),
-            body=event.body,
-            body_kind=body_kind(event.headers, event.body),
+            headers=self._redactor.headers(event.headers),
+            body=body,
+            body_kind=kind,
+            body_unscanned=unscanned,
             body_truncated_bytes=event.body_truncated_bytes,
             body_error=event.body_error,
         )

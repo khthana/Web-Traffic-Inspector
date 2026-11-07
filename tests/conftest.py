@@ -13,6 +13,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
 from inspector.pipeline import InspectorPipeline
+from inspector.redactor import Redactor
 from inspector.store import EventStore
 
 
@@ -50,7 +51,7 @@ class Harness:
 def harness() -> Iterator[Harness]:
     store = EventStore(max_exchanges=500)
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(store=store, broadcaster=broadcaster)
+    pipeline = InspectorPipeline(store=store, broadcaster=broadcaster, redactor=Redactor())
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)
