@@ -8,7 +8,7 @@ import re
 from typing import Any, NamedTuple
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
-from inspector.models import BodyKind
+from inspector.models import BodyKind, HttpExchange, Interaction
 
 REDACTED = "••••"
 SENSITIVE_KEY = re.compile(r"pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card", re.I)
@@ -88,6 +88,52 @@ class Redactor:
             return self._json_body(body)
         return RedactedBody(body, unscanned=True)  # text หรือ binary: เดารูปแบบไม่ได้
 
+    def exchange(self, exchange: HttpExchange) -> HttpExchange:
+        """ซ่อนค่าลับใน Exchange ทั้งตัว (ใช้กับ Exchange จากไฟล์ Recording) ค่าที่ซ่อนไว้แล้วคงเดิม"""
+        request = exchange.request
+        request_body = self.body(request.body, request.body_kind)
+        response = exchange.response
+        if response is not None:
+            response_body = self.body(response.body, response.body_kind)
+            response = response.model_copy(
+                update={
+                    "headers": self.headers(response.headers),
+                    "body": response_body.text,
+                    "body_unscanned": response_body.unscanned,
+                }
+            )
+        return exchange.model_copy(
+            update={
+                "page_url": self.url(exchange.page_url),
+                "request": request.model_copy(
+                    update={
+                        "url": self.url(request.url),
+                        "query": self.query(request.query),
+                        "headers": self.headers(request.headers),
+                        "body": request_body.text,
+                        "body_unscanned": request_body.unscanned,
+                    }
+                ),
+                "response": response,
+            }
+        )
+
+    def interaction(self, interaction: Interaction) -> Interaction:
+        """ซ่อนค่าลับใน URL ทุกตัวของ Interaction (หน้า, ปลายทางที่เปิด, href ของ element ที่คลิก)"""
+        click = interaction.click
+        if click is not None:
+            href = click.element.href
+            element = click.element.model_copy(update={"href": None if href is None else self.url(href)})
+            click = click.model_copy(update={"page_url": self.url(click.page_url), "element": element})
+        navigated_to = interaction.navigated_to
+        return interaction.model_copy(
+            update={
+                "page_url": self.url(interaction.page_url),
+                "navigated_to": None if navigated_to is None else self.url(navigated_to),
+                "click": click,
+            }
+        )
+
     def _json_body(self, body: str) -> RedactedBody:
         try:
             data = json.loads(body)
@@ -107,6 +153,8 @@ class Redactor:
         if lowered in URL_HEADER_NAMES:
             return self.url(value)
         if is_sensitive_header(name) or self.is_sensitive_key(name):
+            if value.startswith(REDACTED):
+                return value  # ซ่อนไว้แล้ว (เช่นมาจาก Recording): ไม่ซ่อนซ้ำ จำนวนตัวอักษรจะได้ยังเป็นของค่าจริง
             return f"{REDACTED} (ซ่อนไว้, {len(value)} ตัวอักษร)"
         return value
 

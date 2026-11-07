@@ -86,6 +86,14 @@ class EventStore:
     def interactions(self) -> list[Interaction]:
         return list(self._interactions.values())
 
+    def get_interaction(self, interaction_id: str) -> Interaction | None:
+        return self._interactions.get(interaction_id)
+
+    def exchanges_of(self, interaction: Interaction) -> list[HttpExchange]:
+        """Exchange ของ Interaction นี้ที่ยังอยู่ใน store เรียงตามลำดับที่เข้ามา"""
+        wanted = set(interaction.exchange_ids)
+        return [exchange for exchange in self if exchange.id in wanted]
+
     def clear(self) -> None:
         """ล้างทุกอย่าง รวม Hidden count (ลำดับการเข้ามายังนับต่อ ไม่มีผลกับการเรียง)"""
         self._visible.clear()

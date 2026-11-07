@@ -66,7 +66,11 @@ async def run(args: argparse.Namespace, filters: FilterSettings, recording: Reco
 
     background: list[asyncio.Task[None]] = []
     if recording is not None:
-        pipeline.play(recording, args.replay_file.name)  # ไม่มีงานเบื้องหลัง: ไม่ต่อ Chrome เลย
+        # ไม่มีงานเบื้องหลัง: ไม่ต่อ Chrome เลย
+        dropped = pipeline.play(recording, args.replay_file.name)
+        if dropped:
+            print(f"Recording มี Exchange เกินเพดาน {args.max_exchanges} ตัว: ไม่แสดง {dropped} ตัวที่เก่าที่สุด"
+                  " (เพิ่ม --max-exchanges ได้)")
     elif args.demo:
         background.append(asyncio.create_task(feed_demo_events(pipeline)))
     else:

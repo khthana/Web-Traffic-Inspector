@@ -54,9 +54,12 @@ def test_playback_mode_and_export_buttons(playback: str, tmp_path: Path) -> None
         assert not await page.is_visible("#chrome-setup")
         assert not await page.is_visible("#chrome-banner")
         assert not await page.is_visible("#pause-toggle")
-        await page.keyboard.press("Space")  # คีย์ลัดหยุดก็ไม่ทำอะไร
+        assert not await page.is_visible("#clear")  # ล้างแล้วโหลดไฟล์กลับไม่ได้
+        await page.keyboard.press("Space")  # คีย์ลัดหยุดและล้างก็ไม่ทำอะไร
+        await page.keyboard.press("c")
         await page.wait_for_timeout(300)
         assert not await page.is_visible("#paused-banner")
+        assert await page.locator(".card").count() == 2
 
         async with page.expect_download() as session_download:
             await page.click("#export")

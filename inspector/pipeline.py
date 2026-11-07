@@ -3,10 +3,10 @@
 สอนแนวคิด: dependency injection — รับ object ที่ต้องใช้ผ่าน `__init__` จึงสลับของปลอมตอนทดสอบได้
 """
 
-import time
 from typing import Any
 
 from inspector.broadcaster import Broadcaster
+from inspector.clock import Clock, now_ms
 from inspector.capture_events import (
     CaptureEvent,
     ClickCaptured,
@@ -30,6 +30,7 @@ from inspector.models import (
     Recording,
     TabInfo,
 )
+from inspector.recording import settled
 from inspector.redactor import Redactor
 from inspector.store import EventStore
 from inspector.summarizer import Summarizer
@@ -53,8 +54,10 @@ class InspectorPipeline:
         filters: FilterSettings,
         summarizer: Summarizer,
         chrome_launch_command: str = "",
+        clock: Clock = now_ms,
     ) -> None:
         self._store = store
+        self._clock = clock
         self._filters = filters
         self._summarizer = summarizer
         self._chain = filters.chain()
@@ -149,26 +152,30 @@ class InspectorPipeline:
     def recording(self, interaction_id: str | None = None) -> Recording:
         """Recording ของทั้ง session หรือของ Interaction เดียว (Interaction ไม่รู้จัก → KeyError)
 
-        ข้อมูลใน store ผ่าน Redaction มาแล้ว Recording จึงไม่มีค่าลับเสมอ
+        ทุกอย่างใน store ผ่าน Redaction มาแล้ว (รวมของที่โหลดจากไฟล์) Recording จึงไม่มีค่าลับ
         """
-        interactions = self._store.interactions()
-        exchanges = list(self._store)
-        if interaction_id is not None:
-            interactions = [i for i in interactions if i.id == interaction_id]
-            if not interactions:
+        if interaction_id is None:
+            interactions, exchanges = self._store.interactions(), list(self._store)
+        else:
+            interaction = self._store.get_interaction(interaction_id)
+            if interaction is None:
                 raise KeyError(interaction_id)
-            wanted = set(interactions[0].exchange_ids)
-            exchanges = [e for e in exchanges if e.id in wanted]
-        return Recording(exported_at=time.time() * 1000, interactions=interactions, exchanges=exchanges)
+            interactions, exchanges = [interaction], self._store.exchanges_of(interaction)
+        return Recording(exported_at=self._clock(), interactions=interactions, exchanges=exchanges)
 
-    def play(self, recording: Recording, file_name: str) -> None:
-        """Recording playback: ใส่ Recording เข้า store แล้วกรองตาม Preset ปัจจุบัน ไม่ต่อ Chrome และไม่ส่ง request ใดๆ"""
+    def play(self, recording: Recording, file_name: str) -> int:
+        """Recording playback: ใส่ Recording เข้า store แล้วกรองตาม Preset ปัจจุบัน ไม่ต่อ Chrome และไม่ส่ง request ใดๆ
+
+        ไฟล์อาจถูกแก้ด้วยมือหรือมาจากที่อื่น จึงผ่าน Redactor อีกรอบก่อนเก็บเหมือน traffic สด (Redaction ปิดไม่ได้)
+        คืนจำนวน Exchange ที่เกินเพดาน `--max-exchanges` (ตัวเก่าสุดถูกตัดทิ้ง)
+        """
         for interaction in recording.interactions:
-            self._store.add_interaction(interaction)
+            self._store.add_interaction(self._redactor.interaction(interaction))
         for exchange in recording.exchanges:
-            self._store.add_exchange(exchange)
+            self._store.add_exchange(self._redactor.exchange(settled(exchange)))
         self._store.refilter(self._chain.apply)
         self._publish_status(mode="playback", recording_file=file_name, hidden_count=self._store.hidden_count)
+        return len(recording.exchanges) - len(self._store)
 
     def snapshot(self) -> dict[str, Any]:
         """ข้อมูลทั้งหมดที่ client ใหม่ต้องรู้"""

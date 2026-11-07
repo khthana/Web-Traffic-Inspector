@@ -7,10 +7,10 @@
 import asyncio
 import itertools
 import json
-import time
 from typing import Any
 
 from inspector.capture_events import ClickCaptured, NavigationOccurred, RequestStarted, ResponseReceived
+from inspector.clock import now_ms
 from inspector.models import ElementInfo
 from inspector.pipeline import InspectorPipeline
 
@@ -18,9 +18,6 @@ TAB = "demo-tab"
 SITE = "https://www.advice.co.th"
 API = f"{SITE}/_advice-api/api/v1.0.0"
 
-
-def now_ms() -> float:
-    return time.time() * 1000
 
 
 class DemoScript:

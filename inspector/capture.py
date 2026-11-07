@@ -6,7 +6,6 @@
 
 import asyncio
 import codecs
-import time
 from email.message import Message
 from typing import Literal, cast
 
@@ -21,6 +20,7 @@ from inspector.capture_events import (
     TabChanged,
 )
 from inspector.click_tracker import ClickTracker
+from inspector.clock import now_ms
 from inspector.http_parts import header, origin_of
 
 MAX_BODY_BYTES = 64 * 1024
@@ -28,9 +28,6 @@ CAPTURED_TYPES = ("fetch", "xhr")
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 IGNORED_SCHEMES = ("about:", "chrome:", "chrome-extension:", "devtools:", "chrome-untrusted:", "edge:")
 TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql")
-
-def now_ms() -> float:
-    return time.time() * 1000
 
 
 def is_inspector_url(url: str, inspector_origins: tuple[str, ...]) -> bool:

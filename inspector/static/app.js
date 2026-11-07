@@ -305,6 +305,11 @@ function shorten(text, max) {
 
 /** จุดสถานะ Chrome ที่ top bar
  *  สอนแนวคิด: single responsibility — class นี้รู้แค่เรื่องแสดงสถานะ */
+/** โหมด Recording playback: เปิดไฟล์ที่ export ไว้ ไม่ต่อ Chrome และไม่มี traffic ใหม่เข้ามา */
+function isPlayback(status) {
+  return status.mode === "playback";
+}
+
 class StatusView {
   constructor(element) {
     this.element = element;
@@ -319,7 +324,7 @@ class StatusView {
   }
 
   label(status) {
-    if (status.mode === "playback") return `โหมดเล่นซ้ำ: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
+    if (isPlayback(status)) return `โหมดเล่นซ้ำ: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
     if (status.chrome !== "connected") return "ไม่พบ Chrome";
     return status.paused ? "หยุดชั่วคราว" : `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`;
   }
@@ -337,7 +342,7 @@ class ChromeHelpView {
 
   show(status) {
     // Recording playback ไม่ต่อ Chrome โดยตั้งใจ จึงไม่ต้องสอนวิธีเปิด Chrome หรือเตือนว่าหลุด
-    const connected = status.chrome === "connected" || status.mode === "playback";
+    const connected = status.chrome === "connected" || isPlayback(status);
     if (connected) this.wasConnected = true;
     this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
     this.setup.hidden = connected || !status.chrome_launch_command; // โหมด --demo ไม่ต้องใช้ Chrome
@@ -848,15 +853,20 @@ class ClickFollower {
 class CaptureControls {
   constructor(pauseButton, clearButton, banner) {
     this.pauseButton = pauseButton;
+    this.clearButton = clearButton;
     this.banner = banner;
     this.paused = false;
+    this.playback = false;
     pauseButton.addEventListener("click", () => this.togglePause());
     clearButton.addEventListener("click", () => this.clear());
   }
 
   show(status) {
     this.paused = status.paused;
-    this.pauseButton.hidden = status.mode === "playback"; // ไม่มีอะไรให้เก็บ: หยุด/เริ่มต่อไม่มีความหมาย
+    // Recording playback: ไม่มีอะไรให้เก็บ (หยุดไม่มีความหมาย) และล้างแล้วโหลดไฟล์กลับไม่ได้
+    this.playback = isPlayback(status);
+    this.pauseButton.hidden = this.playback;
+    this.clearButton.hidden = this.playback;
     this.pauseButton.textContent = status.paused ? "เริ่มต่อ" : "หยุด";
     this.pauseButton.setAttribute("aria-pressed", String(status.paused));
     this.banner.hidden = !status.paused;
@@ -864,12 +874,13 @@ class CaptureControls {
 
   /** เปลี่ยน this.paused ทันที กดซ้ำเร็วๆ ก่อน status กลับมาจึงสลับถูกทาง (status จาก server ยืนยันอีกครั้ง) */
   togglePause() {
-    if (this.pauseButton.hidden) return Promise.resolve();
+    if (this.playback) return Promise.resolve();
     this.paused = !this.paused;
     return fetch(this.paused ? "/api/pause" : "/api/resume", { method: "POST" });
   }
 
   clear() {
+    if (this.playback) return Promise.resolve();
     return fetch("/api/clear", { method: "POST" });
   }
 }
