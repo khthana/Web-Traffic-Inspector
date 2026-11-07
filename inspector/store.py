@@ -86,6 +86,16 @@ class EventStore:
     def interactions(self) -> list[Interaction]:
         return list(self._interactions.values())
 
+    def clear(self) -> None:
+        """ล้างทุกอย่าง รวม Hidden count (ลำดับการเข้ามายังนับต่อ ไม่มีผลกับการเรียง)"""
+        self._visible.clear()
+        self._hidden.clear()
+        self._exchanges.clear()
+        self._arrival.clear()
+        self._interactions.clear()
+        self._dropped_tracking = 0
+        self._dropped_out_of_focus = 0
+
     def _buffer_for(self, exchange: HttpExchange) -> deque[str]:
         return self._hidden if exchange.hidden else self._visible
 

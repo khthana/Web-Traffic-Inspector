@@ -69,6 +69,8 @@ class InspectorPipeline:
 
     def handle(self, event: CaptureEvent) -> None:
         """รับ Capture event หนึ่งตัว (ต้องเรียกบน event loop ของ app)"""
+        if self.status.paused and isinstance(event, (RequestStarted, ClickCaptured, NavigationOccurred)):
+            return  # ระหว่าง Pause ไม่เก็บของใหม่ แต่คำตอบของ Exchange ที่ค้างอยู่และสถานะแท็บยังรับ
         if isinstance(event, RequestStarted):
             self._on_request(event)
         elif isinstance(event, ResponseReceived):
@@ -91,6 +93,26 @@ class InspectorPipeline:
                 if exchange is not None:
                     self._finish(exchange.model_copy(update={"state": "failed", "failure": "Chrome หลุดก่อนได้คำตอบ"}))
         self._publish_status(chrome="connected" if connected else "disconnected")
+
+    def pause(self) -> InspectorStatus:
+        """หยุดเก็บชั่วคราว: request และคลิกใหม่ถูกทิ้ง (ไม่นับใน Hidden count) แต่ Exchange ที่รอคำตอบยังอัปเดตได้"""
+        self._publish_status(paused=True)
+        return self.status
+
+    def resume(self) -> InspectorStatus:
+        """เริ่มเก็บต่อ โดยเริ่ม Correlator ใหม่: คลิกก่อน Pause ไม่จับคู่กับ request หลัง Resume"""
+        self._correlator.reset()
+        self._publish_status(paused=False)
+        return self.status
+
+    def clear(self) -> InspectorStatus:
+        """ล้าง Interaction, Exchange และ Hidden count แล้วประกาศ `cleared` (สถานะ Pause คงเดิม)"""
+        self._store.clear()
+        self._correlator.reset()
+        self._pending.clear()  # คำตอบของ Exchange ที่ล้างไปแล้วไม่ต้องรอ
+        self._broadcaster.publish("cleared", {})
+        self._publish_status(hidden_count=self._store.hidden_count)
+        return self.status
 
     def filter_view(self) -> FilterView:
         return self._filters.view()

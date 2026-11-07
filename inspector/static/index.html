@@ -26,10 +26,16 @@
       </label>
       <button type="button" class="tool-button" id="hidden-toggle" aria-pressed="false"
         title="แสดง/ซ่อน Exchange ที่ถูกกรองออก (tracking และนอกโฟกัส)">ซ่อน 0 รายการ</button>
+      <button type="button" class="tool-button" id="pause-toggle" aria-pressed="false"
+        title="หยุดเก็บชั่วคราวระหว่างอธิบาย (คีย์ลัด Space)">หยุด</button>
+      <button type="button" class="tool-button" id="clear" title="ล้าง Timeline ทั้งหมด (คีย์ลัด C)">ล้าง</button>
     </div>
   </header>
 
   <div class="banner" id="socket-banner" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
+  <div class="banner banner-warn" id="paused-banner" role="status" hidden>
+    หยุดเก็บชั่วคราว — กด Space เพื่อเริ่มต่อ
+  </div>
   <div class="banner banner-warn" id="chrome-banner" role="status" hidden>
     Chrome หลุดการเชื่อมต่อ — ข้อมูลเดิมยังอยู่ครบ กำลังลองเชื่อมใหม่อัตโนมัติ
   </div>
@@ -51,7 +57,7 @@
 
   <main class="layout">
     <section class="timeline" aria-label="Timeline">
-      <h2 class="column-title">TIMELINE · ใหม่สุดอยู่บน</h2>
+      <h2 class="column-title">TIMELINE · ใหม่สุดอยู่บน <span class="shortcuts">↑/↓ เลือก · Space หยุด · C ล้าง</span></h2>
       <div class="chrome-setup" id="chrome-setup" hidden>
         <h3>ไม่พบ Chrome ที่เปิดโหมด debug</h3>
         <p>วางคำสั่งนี้ใน Terminal (Windows ใช้ PowerShell) เพื่อเปิด Chrome ด้วยโปรไฟล์แยกสำหรับสอน ไม่ต้องปิด Chrome ตัวเดิม:</p>

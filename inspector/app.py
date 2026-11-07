@@ -46,6 +46,21 @@ def create_app(pipeline: InspectorPipeline, store: EventStore, broadcaster: Broa
             raise HTTPException(status_code=404, detail="ไม่พบ Exchange นี้ (อาจถูกล้างไปแล้ว)")
         return exchange
 
+    @app.post("/api/pause")
+    def pause() -> InspectorStatus:
+        """หยุดเก็บชั่วคราว (request และคลิกใหม่ถูกทิ้ง ไม่ได้บล็อกเว็บ)"""
+        return pipeline.pause()
+
+    @app.post("/api/resume")
+    def resume() -> InspectorStatus:
+        """เริ่มเก็บต่อ"""
+        return pipeline.resume()
+
+    @app.post("/api/clear")
+    def clear() -> InspectorStatus:
+        """ล้างประวัติทั้งหมดและ Hidden count"""
+        return pipeline.clear()
+
     @app.get("/api/filters")
     def get_filters() -> FilterView:
         """Preset ที่เลือกได้ ตัวที่เลือกอยู่ กฎของมัน และ Blocklist พื้นฐาน (ถอดออกไม่ได้)"""

@@ -90,6 +90,13 @@ class Correlator:
         tab.background = self._with_exchange(tab.background, exchange_id)
         return Correlation(tab.background, is_new=False)
 
+    def reset(self) -> None:
+        """ลืม Interaction ที่เปิดอยู่ทุกแท็บ (หลัง Resume หรือ Clear) คลิกเก่าจะได้ไม่จับคู่กับ request ใหม่
+
+        เลข id ยังนับต่อ ไม่ย้อนกลับ จึงไม่ชนกับ id ที่ client เคยเห็น
+        """
+        self._tabs.clear()
+
     def forget(self, interaction_id: str) -> None:
         """เลิกจำ Interaction นี้ (store ตัดทิ้งไปแล้ว) Exchange ถัดไปจะได้ Interaction ใหม่แทน"""
         for tab in self._tabs.values():

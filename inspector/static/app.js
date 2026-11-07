@@ -76,6 +76,16 @@ class TimelineView {
     this.onSelect(exchange, exchange ? this.interactions.get(exchange.interaction_id) ?? null : null, byUser);
   }
 
+  /** ↑/↓: เลื่อนการเลือกไปแถวก่อน/ถัดไปที่อยู่บนจอ (แถวที่ซ่อนอยู่ข้ามไป) ยังไม่ได้เลือกก็เริ่มที่แถวบนสุด */
+  moveSelection(step) {
+    const rows = [...this.list.querySelectorAll(".exchange")].filter((row) => row.offsetParent !== null);
+    if (rows.length === 0) return;
+    const current = rows.indexOf(this.rows.get(this.selectedId));
+    const next = current === -1 ? 0 : Math.min(Math.max(current + step, 0), rows.length - 1);
+    rows[next].focus();
+    this.select(rows[next].dataset.id, true);
+  }
+
   /** Exchange ที่มองเห็นได้ (ไม่ถูกกรอง) ของ Interaction หนึ่ง เรียงตามเวลาที่ request ออก */
   visibleExchangesOf(interactionId) {
     return [...this.exchanges.values()]
@@ -246,10 +256,10 @@ class StatusView {
 
   show(status) {
     const connected = status.chrome === "connected";
-    this.element.dataset.state = status.chrome;
-    this.element.querySelector(".label").textContent = connected
-      ? `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`
-      : "ไม่พบ Chrome";
+    this.element.dataset.state = status.paused ? "paused" : status.chrome;
+    let label = connected ? `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ` : "ไม่พบ Chrome";
+    if (status.paused) label = "หยุดชั่วคราว";
+    this.element.querySelector(".label").textContent = label;
   }
 }
 
@@ -761,6 +771,53 @@ class ClickFollower {
   }
 }
 
+/** ปุ่ม หยุด/เริ่มต่อ และ ล้าง คุยกับ POST /api/pause|resume|clear ส่วนหน้าจอเปลี่ยนตาม status ที่ server ส่งกลับมา
+ *  สอนแนวคิด: encapsulation — คนอื่นสั่งได้แค่ togglePause() / clear() ไม่ต้องรู้ว่าเรียก API ตัวไหน */
+class CaptureControls {
+  constructor(pauseButton, clearButton, banner) {
+    this.pauseButton = pauseButton;
+    this.banner = banner;
+    this.paused = false;
+    pauseButton.addEventListener("click", () => this.togglePause());
+    clearButton.addEventListener("click", () => this.clear());
+  }
+
+  show(status) {
+    this.paused = status.paused;
+    this.pauseButton.textContent = status.paused ? "เริ่มต่อ" : "หยุด";
+    this.pauseButton.setAttribute("aria-pressed", String(status.paused));
+    this.banner.hidden = !status.paused;
+  }
+
+  togglePause() {
+    return fetch(this.paused ? "/api/resume" : "/api/pause", { method: "POST" });
+  }
+
+  clear() {
+    return fetch("/api/clear", { method: "POST" });
+  }
+}
+
+/** คีย์ลัดทั้งหน้า: ↑/↓ เลือก Exchange, Space หยุด/เริ่มต่อ, C ล้าง (ไม่ใช้ Ctrl+L เพราะชนกับเบราว์เซอร์)
+ *  ช่องกรอก/checkbox/dropdown ใช้คีย์เองทั้งหมด ส่วนปุ่มใช้แค่ Space (กดปุ่มนั้น) คีย์ลัดจึงไม่แย่ง */
+function installShortcuts(timeline, controls) {
+  const actions = {
+    ArrowDown: () => timeline.moveSelection(1),
+    ArrowUp: () => timeline.moveSelection(-1),
+    " ": () => controls.togglePause(),
+    c: () => controls.clear(),
+    C: () => controls.clear(),
+  };
+  document.addEventListener("keydown", (event) => {
+    const action = actions[event.key];
+    const typing = event.target.closest?.("input, select, textarea, [contenteditable]");
+    const pressingButton = event.key === " " && event.target.closest?.("button, summary");
+    if (!action || typing || pressingButton || event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault(); // ไม่ให้ Space/ลูกศรเลื่อนหน้าจอ
+    action();
+  });
+}
+
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
   const detail = new DetailView(document.getElementById("detail"));
@@ -780,6 +837,12 @@ function main() {
     document.getElementById("chrome-banner"),
   );
   const hiddenToggle = new HiddenToggle(document.getElementById("hidden-toggle"));
+  const controls = new CaptureControls(
+    document.getElementById("pause-toggle"),
+    document.getElementById("clear"),
+    document.getElementById("paused-banner"),
+  );
+  installShortcuts(timeline, controls);
   const filters = new FilterControls(document.getElementById("preset"), document.getElementById("custom-filters"));
   filters.load();
   const banner = document.getElementById("socket-banner");
@@ -788,6 +851,7 @@ function main() {
     chromeHelp.show(data);
     hiddenToggle.show(data);
     filters.show(data);
+    controls.show(data);
     // CSS ใช้ค่านี้รอให้ครบ Correlation window ก่อนบอกว่าคลิกนี้ "ไม่มี API call"
     document.documentElement.style.setProperty("--correlation-window", `${data.correlation_window_ms}ms`);
   };
@@ -811,6 +875,10 @@ function main() {
     "exchange.new": showExchange,
     "exchange.update": showExchange,
     status: showStatus,
+    cleared: () => {
+      follower.stop();
+      timeline.reset([], []);
+    },
   };
 
   const socket = new InspectorSocket(
