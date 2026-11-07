@@ -16,7 +16,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
+from playwright.async_api import Browser, async_playwright
 
 import uvicorn
 from pipeline_factory import new_pipeline
@@ -44,6 +46,23 @@ def free_port() -> int:
 
 def find_chrome() -> str | None:
     return next((c for c in CHROME_CANDIDATES if c and Path(c).exists()), None)
+
+
+def in_chrome(scenario: Callable[[Browser], Awaitable[None]]) -> None:
+    """เปิด Chrome headless ให้ scenario ใช้แล้วปิดให้เสมอ (ไม่พบ Chrome ในเครื่อง → skip)"""
+    executable = find_chrome()
+    if executable is None:
+        pytest.skip("ไม่พบ Chrome ในเครื่องนี้")
+
+    async def run() -> None:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(executable_path=executable, headless=True)
+            try:
+                await scenario(browser)
+            finally:
+                await browser.close()
+
+    asyncio.run(run())
 
 
 @contextmanager

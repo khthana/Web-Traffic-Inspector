@@ -376,5 +376,4 @@ body {
   .layout:not(.detail-open) .detail { display: none; }
   .layout.detail-open .timeline { display: none; }
   .layout.detail-open .detail-back { display: inline-block; }
-  .shortcuts { display: none; }
 }

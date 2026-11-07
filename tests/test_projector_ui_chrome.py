@@ -1,15 +1,14 @@
 """UI สำหรับจอโปรเจกเตอร์ใน Chrome จริง: ขนาดตัวอักษร, ธีม, แถบเตือนจริยธรรม, จอแคบ, ปุ่ม "มี N รายการใหม่"
 และ WebSocket หลุดแล้วเชื่อมใหม่ (`pytest -m chrome`)"""
 
-import asyncio
 import time
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Iterator
 from urllib.parse import urlsplit
 
 import pytest
-from chrome_support import find_chrome, serve
+from chrome_support import in_chrome, serve
 from pipeline_factory import new_pipeline
-from playwright.async_api import Browser, Page, WebSocketRoute, async_playwright
+from playwright.async_api import Browser, Page, WebSocketRoute
 
 from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
@@ -28,7 +27,8 @@ FONT_HOSTS = {"fonts.googleapis.com", "fonts.gstatic.com"}  # ฟอนต์ fa
 
 @pytest.fixture
 def inspector() -> Iterator[str]:
-    """Inspector ที่เชื่อม Chrome แล้วแต่ยังไม่มีข้อมูล ป้อนคลิกเพิ่มได้ทาง POST /test/feed/{count}"""
+    """Inspector ที่เชื่อม Chrome แล้วแต่ยังไม่มีข้อมูล ป้อนคลิกเพิ่มได้ทาง POST /test/feed/{count}
+    และ tracking เบื้องหลังที่ถูกซ่อนทาง POST /test/tracking"""
     store = EventStore()
     broadcaster = Broadcaster()
     pipeline = new_pipeline(store, broadcaster)
@@ -52,24 +52,18 @@ def inspector() -> Iterator[str]:
                 )
             )
 
+    @app.post("/test/tracking")
+    async def tracking() -> None:
+        """route สำหรับ test เท่านั้น: request เบื้องหลังที่ไม่มีคลิก และถูกซ่อนเพราะเป็น tracking"""
+        pipeline.handle(
+            RequestStarted(
+                request_key=f"t{clicks}", tab_id="tab-1", page_url=PAGE, ts=T0 + clicks * 10_000 + 5_000,
+                method="POST", url="https://www.clarity.ms/collect", resource_type="fetch",
+            )
+        )
+
     with serve(app) as origin:
         yield origin
-
-
-def in_chrome(scenario: Callable[[Browser], Awaitable[None]]) -> None:
-    executable = find_chrome()
-    if executable is None:
-        pytest.skip("ไม่พบ Chrome ในเครื่องนี้")
-
-    async def run() -> None:
-        async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(executable_path=executable, headless=True)
-            try:
-                await scenario(browser)
-            finally:
-                await browser.close()
-
-    asyncio.run(run())
 
 
 async def no_horizontal_scroll(page: Page) -> bool:
@@ -145,6 +139,7 @@ def test_new_cards_do_not_scroll_away_what_the_user_is_reading(inspector: str) -
         await page.evaluate("document.querySelector('.timeline').scrollTop += 1")  # ไม่อยู่บนสุดแน่ๆ
         top_before = (await reading.bounding_box() or {"y": 0})["y"]
 
+        await page.request.post(inspector + "/test/tracking")  # การ์ดเบื้องหลังที่ถูกซ่อน: ไม่นับเป็นรายการใหม่
         await page.request.post(inspector + "/test/feed/2")
         await page.wait_for_selector('.card:has-text("ปุ่มที่ 17")', state="attached")
         await page.wait_for_selector("#new-items", state="visible")
@@ -159,7 +154,6 @@ def test_new_cards_do_not_scroll_away_what_the_user_is_reading(inspector: str) -
         # อยู่บนสุดอยู่แล้ว: การ์ดใหม่ขึ้นให้เห็นเลย ไม่ต้องมีปุ่ม
         await page.request.post(inspector + "/test/feed/1")
         await page.wait_for_selector('.card:has-text("ปุ่มที่ 18")')
-        assert await page.locator(".card").first.text_content() is not None
         assert "ปุ่มที่ 18" in (await page.locator(".card").first.text_content() or "")
         assert not await page.is_visible("#new-items")
 
@@ -188,6 +182,14 @@ def test_narrow_screen_stacks_timeline_and_detail_with_a_back_button(inspector: 
         assert await page.is_visible("#timeline")
         assert not await page.is_visible("#detail")
         assert await page.evaluate("document.activeElement.matches('.exchange[aria-selected=true]')")
+
+        # ↑/↓ เปิด Detail แล้วยังไล่ Exchange ต่อได้ แม้ Timeline ถูกซ่อนอยู่
+        await page.keyboard.press("ArrowUp")
+        await page.wait_for_selector("#detail-back", state="visible")
+        assert "/api/item/2" in (await page.text_content(".detail-url") or "")
+        await page.keyboard.press("ArrowDown")
+        assert "/api/item/1" in (await page.text_content(".detail-url") or "")
+        await page.click("#detail-back")
 
         await page.click("#font-bigger")
         await page.click("#font-bigger", force=True)
@@ -221,5 +223,23 @@ def test_lost_websocket_shows_grey_banner_and_reconnects_with_a_new_snapshot(ins
         await page.wait_for_selector("#socket-banner", state="hidden", timeout=7000)
         await page.wait_for_selector('.card:has-text("ปุ่มที่ 1")')
         assert 0.9 <= connected_at[-1] - closed_at <= 5.5  # backoff 1–5 วินาที
+
+    in_chrome(scenario)
+
+
+def test_page_still_works_when_the_browser_blocks_storage(inspector: str) -> None:
+    async def scenario(browser: Browser) -> None:
+        page = await browser.new_page()
+        await page.add_init_script(
+            "Object.defineProperty(window, 'localStorage', "
+            "{get() { throw new DOMException('blocked', 'SecurityError'); }})"
+        )
+        await page.goto(inspector + "/")
+        await page.wait_for_selector("#timeline-empty")
+        assert await page.is_visible("#ethics-banner")  # จำไม่ได้ว่าเคยปิด จึงเตือนทุกครั้ง
+        await page.click("#font-bigger")
+        assert await font_size(page) == "20px"
+        await page.request.post(inspector + "/test/feed/1")
+        await page.wait_for_selector('.card:has-text("ปุ่มที่ 1")')
 
     in_chrome(scenario)

@@ -78,7 +78,8 @@ class TimelineView {
 
   /** ↑/↓: เลื่อนการเลือกไปแถวก่อน/ถัดไปที่อยู่บนจอ (แถวที่ซ่อนอยู่ข้ามไป) ยังไม่ได้เลือกก็เริ่มที่แถวบนสุด */
   moveSelection(step) {
-    const rows = [...this.list.querySelectorAll(".exchange")].filter((row) => row.offsetParent !== null);
+    // ดูที่ตัวแถวและการ์ด ไม่ดูทั้ง Timeline: จอแคบที่ Detail เปิดเต็มจอ Timeline ถูกซ่อน แต่ยังไล่แถวต่อได้
+    const rows = [...this.list.querySelectorAll(".exchange")].filter((row) => isShown(row) && isShown(row.closest(".card")));
     if (rows.length === 0) return;
     const current = rows.indexOf(this.rows.get(this.selectedId));
     const next = current === -1 ? 0 : Math.min(Math.max(current + step, 0), rows.length - 1);
@@ -133,16 +134,28 @@ class TimelineView {
   focusSelected() {
     this.rows.get(this.selectedId)?.focus();
   }
+
+  isCardShown(interactionId) {
+    const card = this.cards.get(interactionId);
+    return card !== undefined && isShown(card);
+  }
+}
+
+/** element นี้ไม่ได้ถูก CSS ซ่อนด้วย display: none ที่ตัวมันเอง (ถูกกรอง, การ์ดว่าง) */
+function isShown(element) {
+  return getComputedStyle(element).display !== "none";
 }
 
 /** ปุ่มลอย "มี N รายการใหม่ ↑": ผู้สอนเลื่อนลงไปดูของเก่าอยู่ การ์ดใหม่ไม่ดึงจอขึ้นไป (Chrome คงตำแหน่งให้เอง:
  *  scroll anchoring) แค่นับไว้ กดปุ่มหรือเลื่อนกลับขึ้นบนสุดเองแล้วปุ่มหายไป
- *  สอนแนวคิด: state ใน object — this.count จำจำนวนที่ยังไม่ได้ดู */
+ *  นับเฉพาะการ์ดที่มองเห็นได้จริง การ์ดเบื้องหลังที่มีแต่ tracking ถูกซ่อนอยู่ จึงไม่ทำให้ตัวเลขพอง
+ *  สอนแนวคิด: state ใน object — this.unseen จำ Interaction ที่มาถึงตอนผู้สอนไม่ได้อยู่บนสุด */
 class NewItemsNotice {
-  constructor(scroller, button) {
+  constructor(scroller, button, timeline) {
     this.scroller = scroller;
     this.button = button;
-    this.count = 0;
+    this.timeline = timeline;
+    this.unseen = new Set(); // interaction id
     scroller.addEventListener("scroll", () => {
       if (this.atTop()) this.reset();
     });
@@ -156,16 +169,21 @@ class NewItemsNotice {
     return this.scroller.scrollTop < 1;
   }
 
-  onNewInteraction() {
-    if (this.atTop()) return; // อยู่บนสุด: เห็นการ์ดใหม่อยู่แล้ว
-    this.count += 1;
-    this.button.textContent = `มี ${this.count} รายการใหม่ ↑`;
-    this.button.hidden = false;
+  onNewInteraction(interactionId) {
+    if (!this.atTop()) this.unseen.add(interactionId); // อยู่บนสุด: เห็นการ์ดใหม่อยู่แล้ว
+    this.refresh();
+  }
+
+  /** นับใหม่ทุกครั้งที่การ์ดอาจเปลี่ยนจากซ่อนเป็นเห็น (Exchange มาถึง, เปิดปุ่ม "ซ่อน N รายการ") */
+  refresh() {
+    const count = [...this.unseen].filter((id) => this.timeline.isCardShown(id)).length;
+    this.button.textContent = `มี ${count} รายการใหม่ ↑`;
+    this.button.hidden = count === 0;
   }
 
   reset() {
-    this.count = 0;
-    this.button.hidden = true;
+    this.unseen.clear();
+    this.refresh();
   }
 }
 
@@ -875,17 +893,18 @@ class KeyboardShortcuts {
 }
 
 /** ค่าที่ผู้ใช้เลือกไว้ (ขนาดตัวอักษร ธีม การปิดแถบเตือน) เก็บใน localStorage ของเบราว์เซอร์ ไม่เขียนไฟล์ใดๆ
- *  เปิดแบบ private หรือเบราว์เซอร์ปิด storage ไว้ก็ยังใช้ได้ แค่จำค่าไม่ได้
+ *  เปิดแบบ private หรือเบราว์เซอร์บล็อก storage ไว้ก็ยังใช้ได้ แค่จำค่าไม่ได้ (แค่อ่าน window.localStorage
+ *  ก็ throw ได้ จึงรับเป็นฟังก์ชันที่เปิด storage แล้วเรียกใน try ทุกครั้ง)
  *  สอนแนวคิด: dependency injection — class อื่นรับ Preferences เข้ามา ไม่เรียก localStorage เอง */
 class Preferences {
-  constructor(storage, prefix = "wti.") {
-    this.storage = storage;
+  constructor(openStorage, prefix = "wti.") {
+    this.openStorage = openStorage;
     this.prefix = prefix;
   }
 
   get(key, fallback) {
     try {
-      return this.storage.getItem(this.prefix + key) ?? fallback;
+      return this.openStorage().getItem(this.prefix + key) ?? fallback;
     } catch {
       return fallback;
     }
@@ -893,24 +912,25 @@ class Preferences {
 
   set(key, value) {
     try {
-      this.storage.setItem(this.prefix + key, String(value));
+      this.openStorage().setItem(this.prefix + key, String(value));
     } catch {
       // จำไม่ได้ก็ไม่เป็นไร ค่าใช้ได้จนปิดหน้า
     }
   }
 }
 
-const FONT_SIZES = [14, 17, 20]; // px: ระดับ A− / ปกติ / A+ (SPEC 6.2)
-const DEFAULT_FONT_SIZE = 17;
+const FONT_SIZES = [14, 17, 20]; // px: ระดับ A− / ปกติ / A+ (SPEC 6.2) ค่าเริ่มต้นอยู่ที่ --font-size ใน style.css ที่เดียว
 
-/** ปุ่ม A− / A+ เปลี่ยนขนาดตัวอักษรทั้งหน้าทีละระดับ สุดทางแล้วปุ่มกดไม่ได้ */
+/** ปุ่ม A− / A+ เปลี่ยนขนาดตัวอักษรทั้งหน้าทีละระดับ สุดทางแล้วปุ่มกดไม่ได้
+ *  สอนแนวคิด: invariant — this.level อยู่ในช่วงของ FONT_SIZES เสมอ เพราะเปลี่ยนได้ทาง step() ทางเดียว */
 class FontSizeControl {
   constructor(smaller, bigger, preferences) {
     this.smaller = smaller;
     this.bigger = bigger;
     this.preferences = preferences;
-    const saved = FONT_SIZES.indexOf(Number(preferences.get("fontSize", DEFAULT_FONT_SIZE)));
-    this.level = saved === -1 ? FONT_SIZES.indexOf(DEFAULT_FONT_SIZE) : saved;
+    const cssDefault = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--font-size"), 10);
+    const saved = FONT_SIZES.indexOf(Number(preferences.get("fontSize", cssDefault)));
+    this.level = saved === -1 ? FONT_SIZES.indexOf(cssDefault) : saved;
     smaller.addEventListener("click", () => this.step(-1));
     bigger.addEventListener("click", () => this.step(1));
     this.apply();
@@ -929,29 +949,38 @@ class FontSizeControl {
   }
 }
 
-/** สลับธีมสว่าง/มืด ค่าเริ่มต้นสว่าง (โปรเจกเตอร์อ่านง่ายกว่า) สีทั้งหมดเป็น CSS variables ใน style.css */
+/** ธีมแต่ละแบบ: กดปุ่มแล้วไปธีมไหน และปุ่มเขียนว่าอะไร (บอกว่ากดแล้วจะได้ธีมไหน) */
+const THEMES = {
+  light: { next: "dark", buttonLabel: "ธีมมืด" },
+  dark: { next: "light", buttonLabel: "ธีมสว่าง" },
+};
+
+/** สลับธีมสว่าง/มืด ค่าเริ่มต้นสว่าง (โปรเจกเตอร์อ่านง่ายกว่า) สีทั้งหมดเป็น CSS variables ใน style.css
+ *  สอนแนวคิด: lookup table แทน if/else — ธีมถัดไปและข้อความบนปุ่มอ่านจากตาราง THEMES */
 class ThemeSwitch {
   constructor(button, preferences) {
     this.button = button;
     this.preferences = preferences;
-    this.theme = preferences.get("theme", "light") === "dark" ? "dark" : "light";
+    const saved = preferences.get("theme", "light");
+    this.theme = saved in THEMES ? saved : "light";
     button.addEventListener("click", () => this.toggle());
     this.apply();
   }
 
   toggle() {
-    this.theme = this.theme === "dark" ? "light" : "dark";
+    this.theme = THEMES[this.theme].next;
     this.preferences.set("theme", this.theme);
     this.apply();
   }
 
   apply() {
     document.documentElement.dataset.theme = this.theme;
-    this.button.textContent = this.theme === "dark" ? "ธีมสว่าง" : "ธีมมืด"; // บอกว่ากดแล้วจะได้ธีมไหน
+    this.button.textContent = THEMES[this.theme].buttonLabel;
   }
 }
 
-/** แถบเตือนจริยธรรม แสดงตอนเปิดครั้งแรกจนกว่าจะกดปิด (SPEC 10) */
+/** แถบเตือนจริยธรรม แสดงตอนเปิดครั้งแรกจนกว่าจะกดปิด (SPEC 10)
+ *  สอนแนวคิด: dependency injection — รับ Preferences เข้ามา test หรือหน้าอื่นส่งที่เก็บแบบอื่นให้ได้ */
 class EthicsNotice {
   constructor(banner, closeButton, preferences) {
     banner.hidden = preferences.get("ethicsDismissed", "") === "yes";
@@ -963,7 +992,8 @@ class EthicsNotice {
 }
 
 /** จอแคบกว่า 900 px: Timeline กับ Detail ซ้อนกัน (CSS ดู class detail-open) ผู้สอนเลือก Exchange แล้ว Detail เปิดเต็มจอ
- *  ปุ่มย้อนกลับพาไปที่แถวเดิมใน Timeline จอกว้างไม่มีผลอะไร เพราะเห็นทั้งสองคอลัมน์อยู่แล้ว */
+ *  ปุ่มย้อนกลับพาไปที่แถวเดิมใน Timeline จอกว้างไม่มีผลอะไร เพราะเห็นทั้งสองคอลัมน์อยู่แล้ว
+ *  สอนแนวคิด: แยกหน้าที่ (separation of concerns) — JS บอกแค่ "เปิด Detail อยู่" ส่วน CSS ตัดสินว่าจอขนาดนี้ต้องซ่อนอะไร */
 class StackedLayout {
   constructor(layout, backButton, timeline) {
     this.layout = layout;
@@ -983,7 +1013,7 @@ class StackedLayout {
 
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
-  const preferences = new Preferences(window.localStorage);
+  const preferences = new Preferences(() => window.localStorage);
   new FontSizeControl(document.getElementById("font-smaller"), document.getElementById("font-bigger"), preferences);
   new ThemeSwitch(document.getElementById("theme-toggle"), preferences);
   new EthicsNotice(document.getElementById("ethics-banner"), document.getElementById("ethics-close"), preferences);
@@ -1000,7 +1030,7 @@ function main() {
     },
   );
   const stacked = new StackedLayout(document.querySelector(".layout"), document.getElementById("detail-back"), timeline);
-  const newItems = new NewItemsNotice(document.querySelector(".timeline"), document.getElementById("new-items"));
+  const newItems = new NewItemsNotice(document.querySelector(".timeline"), document.getElementById("new-items"), timeline);
   const follower = new ClickFollower(timeline, document.getElementById("follow-clicks"));
   const status = new StatusView(document.getElementById("chrome-status"));
   const chromeHelp = new ChromeHelpView(
@@ -1008,6 +1038,7 @@ function main() {
     document.getElementById("chrome-banner"),
   );
   const hiddenToggle = new HiddenToggle(document.getElementById("hidden-toggle"));
+  document.getElementById("hidden-toggle").addEventListener("click", () => newItems.refresh());
   const controls = new CaptureControls(
     document.getElementById("pause-toggle"),
     document.getElementById("clear"),
@@ -1029,6 +1060,7 @@ function main() {
 
   const showExchange = (data) => {
     timeline.upsertExchange(data);
+    newItems.refresh();
     follower.onExchange(data);
   };
 
@@ -1041,7 +1073,7 @@ function main() {
     },
     "interaction.new": (data) => {
       timeline.upsertInteraction(data);
-      newItems.onNewInteraction();
+      newItems.onNewInteraction(data.id);
       follower.onNewInteraction(data);
     },
     "interaction.update": (data) => timeline.upsertInteraction(data),
