@@ -1,0 +1,5 @@
+# ไม่ต้องรัน `playwright install` เพราะใช้ Chrome ที่มีอยู่ในเครื่อง
+fastapi>=0.115
+uvicorn[standard]>=0.30
+playwright>=1.45
+pydantic>=2

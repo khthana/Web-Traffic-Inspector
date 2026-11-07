@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web Traffic Inspector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&family=JetBrains+Mono&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="app-name">Web Traffic Inspector</h1>
+    <div class="chrome-status" id="chrome-status" data-state="disconnected">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label">ไม่พบ Chrome</span>
+    </div>
+  </header>
+
+  <div class="banner" id="socket-banner" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
+
+  <main class="layout">
+    <section class="timeline" aria-label="Timeline">
+      <h2 class="column-title">TIMELINE · ใหม่สุดอยู่บน</h2>
+      <p class="empty" id="timeline-empty">พร้อมแล้ว — ลองเปิดเว็บใน Chrome แล้วกดปุ่มสักปุ่ม</p>
+      <ol class="exchange-list" id="exchange-list"></ol>
+    </section>
+    <section class="detail" aria-label="Detail">
+      <p class="empty">เลือก Exchange ทางซ้ายเพื่อดูรายละเอียด</p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
