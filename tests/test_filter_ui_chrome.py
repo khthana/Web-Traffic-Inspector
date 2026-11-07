@@ -16,6 +16,7 @@ from inspector.models import ElementInfo
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
+from inspector.summarizer import Summarizer
 
 pytestmark = pytest.mark.chrome
 
@@ -40,6 +41,7 @@ def inspector() -> Iterator[str]:
         redactor=Redactor(),
         correlator=Correlator(window_ms=1500),
         filters=FilterSettings(load_presets(PRESETS_DIR)),
+        summarizer=Summarizer(),
     )
     element = ElementInfo(tag="button", text="ดูรูปถัดไป", selector="button#gallery")
     for event in (

@@ -30,10 +30,11 @@ from inspector.models import (
 )
 from inspector.redactor import Redactor
 from inspector.store import EventStore
+from inspector.summarizer import Summarizer
 
 
 class InspectorPipeline:
-    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → store → broadcast
+    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → summarize → store → broadcast
 
     กรองหลัง Redaction ได้ผลเท่ากัน เพราะกฎการกรองดูแค่ host, path และชนิด ซึ่ง Redaction ไม่แตะ
     """
@@ -45,10 +46,12 @@ class InspectorPipeline:
         redactor: Redactor,
         correlator: Correlator,
         filters: FilterSettings,
+        summarizer: Summarizer,
         chrome_launch_command: str = "",
     ) -> None:
         self._store = store
         self._filters = filters
+        self._summarizer = summarizer
         self._chain = filters.chain()
         # key ที่ Preset เพิ่มมาสะสมไว้ตลอด (เปลี่ยน Preset แล้วก็ไม่ลด): ซ่อนเกินได้ แต่ห้ามซ่อนขาด
         self._redactor = redactor.with_extra_keys(filters.current.redact_keys)
@@ -160,7 +163,7 @@ class InspectorPipeline:
                 or request.body != event.post_data
             ),
         )
-        exchange = self._chain.apply(exchange)
+        exchange = self._summarized(self._chain.apply(exchange))
         self._pending[event.request_key] = exchange.id
         self._store.add_exchange(exchange)
         self._broadcaster.publish("exchange.new", exchange.model_dump())
@@ -249,8 +252,12 @@ class InspectorPipeline:
         return None if exchange_id is None else self._store.get_exchange(exchange_id)
 
     def _finish(self, exchange: HttpExchange) -> None:
+        exchange = self._summarized(exchange)
         self._store.replace_exchange(exchange)
         self._broadcaster.publish("exchange.update", exchange.model_dump())
+
+    def _summarized(self, exchange: HttpExchange) -> HttpExchange:
+        return exchange.model_copy(update={"summary": self._summarizer.summarize(exchange)})
 
     def _new_id(self) -> str:
         self._next_id += 1

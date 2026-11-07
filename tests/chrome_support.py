@@ -28,6 +28,7 @@ from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
+from inspector.summarizer import Summarizer
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -117,6 +118,7 @@ class LiveInspector:
             redactor=Redactor(),
             correlator=Correlator(window_ms=1500),
             filters=FilterSettings(load_presets(PRESETS_DIR)),
+            summarizer=Summarizer(),
         )
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(

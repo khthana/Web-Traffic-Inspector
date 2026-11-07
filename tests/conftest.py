@@ -20,6 +20,7 @@ from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
+from inspector.summarizer import Summarizer
 
 
 class Harness:
@@ -68,6 +69,7 @@ def build_harness(max_exchanges: int = 500, preset: str = "all") -> Iterator[Har
         redactor=Redactor(),
         correlator=Correlator(window_ms=1500),
         filters=FilterSettings(load_presets(PRESETS_DIR), selected=preset),
+        summarizer=Summarizer(),
         chrome_launch_command=chrome_launch_command("http://127.0.0.1:9222"),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)

@@ -20,6 +20,7 @@ from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
+from inspector.summarizer import Summarizer
 
 HOST = "127.0.0.1"
 
@@ -49,6 +50,7 @@ async def run(args: argparse.Namespace, filters: FilterSettings) -> None:
         redactor=Redactor(),
         correlator=Correlator(window_ms=args.window_ms),
         filters=filters,
+        summarizer=Summarizer(),
         chrome_launch_command="" if args.demo else chrome_launch_command(args.cdp_url),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)

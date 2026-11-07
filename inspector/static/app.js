@@ -27,23 +27,48 @@ class InspectorSocket {
   }
 }
 
-/** Timeline: การ์ด Interaction ใหม่สุดอยู่บน แต่ละการ์ดมีแถว Exchange อยู่ข้างใน
- *  สอนแนวคิด: state ใน object — จำว่าการ์ดและแถวไหนวาดไว้แล้ว (Map) เพื่ออัปเดตที่เดิม ไม่วาดใหม่ทั้งหน้า */
+/** Timeline: การ์ด Interaction ใหม่สุดอยู่บน แต่ละการ์ดมีแถว Exchange อยู่ข้างใน คลิกแถวเพื่อเลือกดูใน Detail
+ *  สอนแนวคิด: state ใน object — จำว่าการ์ดและแถวไหนวาดไว้แล้ว (Map) เพื่ออัปเดตที่เดิม ไม่วาดใหม่ทั้งหน้า
+ *  และ callback — บอก onSelect ว่าเลือก Exchange ไหน โดยไม่ต้องรู้ว่าใครเอาไปแสดง */
 class TimelineView {
-  constructor(listElement, emptyElement) {
+  constructor(listElement, emptyElement, onSelect) {
     this.list = listElement;
     this.empty = emptyElement;
+    this.onSelect = onSelect;
     this.cards = new Map(); // interaction id → <li class="card">
     this.rows = new Map(); // exchange id → <li class="exchange">
+    this.exchanges = new Map(); // exchange id → ข้อมูลล่าสุดของ Exchange
+    this.selectedId = null;
+    listElement.addEventListener("click", (event) => this.selectRow(event.target));
+    listElement.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        this.selectRow(event.target);
+      }
+    });
   }
 
   reset(interactions, exchanges) {
     this.list.replaceChildren();
     this.cards.clear();
     this.rows.clear();
+    this.exchanges.clear();
     interactions.forEach((interaction) => this.upsertInteraction(interaction, false));
     exchanges.forEach((exchange) => this.upsertExchange(exchange));
+    if (!this.exchanges.has(this.selectedId)) this.select(null); // Exchange ที่เลือกไว้ถูกตัดออกจาก store แล้ว
     this.updateEmpty();
+  }
+
+  selectRow(target) {
+    const row = target.closest(".exchange");
+    if (row) this.select(row.dataset.id);
+  }
+
+  select(id) {
+    this.rows.get(this.selectedId)?.setAttribute("aria-selected", "false");
+    this.selectedId = id;
+    this.rows.get(id)?.setAttribute("aria-selected", "true");
+    this.onSelect(this.exchanges.get(id) ?? null);
   }
 
   /** การ์ดใหม่ขึ้นบนสุดพร้อมไฮไลต์ การ์ดเดิมเปลี่ยนแค่หัวการ์ด ไม่ย้ายตำแหน่ง */
@@ -65,7 +90,8 @@ class TimelineView {
   upsertExchange(exchange) {
     const card = this.cards.get(exchange.interaction_id);
     if (!card) return; // การ์ดถูกตัดออกจาก store ไปแล้ว
-    const row = renderExchangeRow(exchange);
+    this.exchanges.set(exchange.id, exchange);
+    const row = renderExchangeRow(exchange, exchange.id === this.selectedId);
     const existing = this.rows.get(exchange.id);
     if (existing) {
       existing.replaceWith(row);
@@ -74,6 +100,7 @@ class TimelineView {
     }
     this.rows.set(exchange.id, row);
     refreshCard(card);
+    if (exchange.id === this.selectedId) this.onSelect(exchange); // ได้คำตอบแล้ว: Detail ต้องเห็นข้อมูลใหม่
   }
 
   updateEmpty() {
@@ -95,6 +122,8 @@ function renderCard(interaction) {
   card.dataset.total = String(interaction.exchange_ids.length);
   const rows = document.createElement("ol");
   rows.className = "exchange-list";
+  rows.setAttribute("role", "listbox");
+  rows.setAttribute("aria-label", "Exchange ของ Interaction นี้");
   card.append(cardHead(interaction), rows);
   if (interaction.kind === "click") {
     card.append(
@@ -144,18 +173,22 @@ function cardTitle(interaction) {
   return interaction.navigated_to ? `${title} → เปลี่ยนหน้าไป ${pathOf(interaction.navigated_to)}` : title;
 }
 
-function renderExchangeRow(exchange) {
+function renderExchangeRow(exchange, selected) {
   const li = document.createElement("li");
   li.className = exchange.hidden ? "exchange is-hidden" : "exchange";
   li.dataset.id = exchange.id;
+  li.tabIndex = 0;
+  li.setAttribute("role", "option");
+  li.setAttribute("aria-selected", String(selected));
   li.dataset.tracking = String(Boolean(exchange.hidden_reason?.startsWith("tracking:")));
   li.append(
-    badge(exchange.request.method, `method-${exchange.request.method}`),
+    methodBadge(exchange.request.method),
     // LRM ครอบไว้ เพื่อไม่ให้ direction: rtl (ที่ใช้ตัด path จากซ้าย) ย้าย "/" ไปไว้ท้าย
     textSpan("path", `\u200e${exchange.request.path}\u200e`, exchange.request.url),
     redactionFlags(exchange),
     statusBadge(exchange),
-    textSpan("ms", exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`),
+    textSpan("ms", durationText(exchange)),
+    textSpan("summary", exchange.summary),
   );
   if (exchange.hidden_reason) li.append(textSpan("hidden-reason", exchange.hidden_reason));
   return li;
@@ -251,6 +284,15 @@ function redactionFlags(exchange) {
     span.append(textSpan("flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ", "body นี้ไม่ใช่ JSON หรือ form แบบ urlencoded (เช่น text, multipart, binary) จึงไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
   }
   return span;
+}
+
+function durationText(exchange) {
+  return exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`;
+}
+
+/** method ที่ไม่มีสีของตัวเอง (HEAD, OPTIONS) ใช้สี --other-method จาก class "method" */
+function methodBadge(method) {
+  return badge(method, `method method-${method}`);
 }
 
 function badge(text, className) {
@@ -358,11 +400,269 @@ class FilterControls {
   }
 }
 
+const REDACTED = "••••"; // ค่าที่ Redactor ใส่แทนข้อมูลลับ (ฝั่ง Python: inspector/redactor.py)
+const HTTP_VERSION = "HTTP/1.1"; // Chrome ไม่บอกเวอร์ชันจริง ใช้รูปแบบที่สอนง่ายที่สุด
+const JSON_OPEN_DEPTH = 2;
+const JSON_ARRAY_PREVIEW = 10;
+
+/** สร้าง element พร้อม class และลูก (ข้อความใส่เป็น text node เสมอ จึงไม่มี HTML injection) */
+function el(tag, className, ...children) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  element.append(...children.filter((child) => child != null));
+  return element;
+}
+
+function redactedChip() {
+  return el("span", "json-redacted", "ซ่อนไว้");
+}
+
+/** JSON tree: ย่อ/ขยายได้ เปิดไว้ JSON_OPEN_DEPTH ชั้นแรก สีตามชนิดข้อมูล และสลับเป็นข้อความดิบได้
+ *  สอนแนวคิด: recursion — object/array ซ้อนกันกี่ชั้นก็วาดได้ด้วยเมธอดเดียวที่เรียกตัวเอง */
+class JsonViewer {
+  constructor(value) {
+    this.tree = el("ul", "json-tree", this.node(null, value, 0));
+    this.raw = el("pre", "raw-body", JSON.stringify(value, null, 2));
+    this.raw.hidden = true;
+    const toggle = el("button", "raw-toggle", "ดูข้อความดิบ");
+    toggle.type = "button";
+    toggle.addEventListener("click", () => {
+      this.raw.hidden = !this.raw.hidden;
+      this.tree.hidden = !this.raw.hidden;
+      toggle.textContent = this.raw.hidden ? "ดูข้อความดิบ" : "ดูแบบ tree";
+    });
+    this.element = el("div", "json-viewer", toggle, this.tree, this.raw);
+  }
+
+  node(key, value, depth) {
+    const label = key == null ? null : el("span", "json-key", `${key}: `);
+    if (value === null || typeof value !== "object" || Object.keys(value).length === 0) {
+      return el("li", "json-leaf", label, this.leaf(value));
+    }
+    const isArray = Array.isArray(value);
+    const entries = Object.entries(value);
+    const shown = isArray ? entries.slice(0, JSON_ARRAY_PREVIEW) : entries;
+    const children = el("ul", "json-children", ...shown.map(([k, v]) => this.node(k, v, depth + 1)));
+    if (shown.length < entries.length) {
+      children.append(el("li", "json-more", `…อีก ${entries.length - shown.length} รายการ`));
+    }
+    const count = isArray ? `[${entries.length} รายการ]` : `{${entries.length} คีย์}`;
+    const details = el("details", "json-branch", el("summary", null, label, el("span", "json-count", count)), children);
+    details.open = depth < JSON_OPEN_DEPTH;
+    return el("li", null, details);
+  }
+
+  leaf(value) {
+    if (value === REDACTED) return redactedChip();
+    if (value === null) return el("span", "json-null", "null");
+    if (typeof value === "object") return el("span", "json-empty", Array.isArray(value) ? "[]" : "{}");
+    if (typeof value === "string") return el("span", "json-string", JSON.stringify(value));
+    return el("span", `json-${typeof value}`, String(value));
+  }
+}
+
+/** แสดง body ตามชนิด: JSON เป็น tree, form เป็นตาราง, อ่านไม่ได้ก็บอกเหตุผล */
+function bodyView(part) {
+  const box = el("div", "body-view");
+  if (part.body_error) return el("div", "body-view", el("p", "body-note", part.body_error));
+  if (part.body == null || part.body === "") return el("div", "body-view", el("p", "body-note", "ไม่มี body"));
+  if (part.body_unscanned) {
+    box.append(el("p", "flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
+  }
+  box.append(bodyContent(part));
+  if (part.body_truncated_bytes > 0) {
+    box.append(el("p", "body-note", `ตัดไว้ที่ 64 KB (ยังมีอีก ${part.body_truncated_bytes.toLocaleString()} bytes)`));
+  }
+  return box;
+}
+
+function bodyContent(part) {
+  if (part.body_kind === "json") {
+    try {
+      return new JsonViewer(JSON.parse(part.body)).element;
+    } catch {
+      // ถูกตัดที่ 64 KB จึง parse ไม่ได้: แสดงข้อความดิบแทน
+    }
+  }
+  if (part.body_kind === "form") {
+    return keyValueTable("form-table", [...new URLSearchParams(part.body)]);
+  }
+  return el("pre", "raw-body", part.body);
+}
+
+/** ตาราง key/value ค่าที่ถูกซ่อนแสดงเป็น chip "ซ่อนไว้" */
+function keyValueTable(className, pairs) {
+  const rows = pairs.map(([key, value]) => el("tr", null, el("td", null, key), el("td", null, value === REDACTED ? redactedChip() : value)));
+  return el("table", `kv-table ${className}`, el("tbody", null, ...rows));
+}
+
+/** headers: key ตัวหนา ค่าที่ซ่อนไว้มีไอคอนกุญแจ */
+function headersTable(headers) {
+  const rows = Object.entries(headers).map(([name, value]) => {
+    const cell = el("td", null, value);
+    if (value.includes(REDACTED)) cell.prepend(lockIcon());
+    return el("tr", null, el("th", null, name), cell);
+  });
+  if (rows.length === 0) return el("p", "body-note", "ไม่มี header");
+  return el("table", "kv-table headers-table", el("tbody", null, ...rows));
+}
+
+function lockIcon() {
+  const lock = el("span", "flag-lock");
+  lock.innerHTML = LOCK_ICON;
+  lock.title = "ค่านี้ถูกซ่อนไว้";
+  return lock;
+}
+
+function contentType(headers) {
+  const entry = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type");
+  return entry ? entry[1] : "—";
+}
+
+function requestLine(request) {
+  const url = safeUrl(request.url);
+  return `${request.method} ${url ? url.pathname + url.search : request.path} ${HTTP_VERSION}`;
+}
+
+function statusLine(response) {
+  return `${HTTP_VERSION} ${response.status} ${response.status_text}`.trim();
+}
+
+/** ยังไม่มีคำตอบ: บอกว่ารออยู่หรือล้มเหลวเพราะอะไร */
+function noResponseNote(exchange) {
+  const text = exchange.state === "failed" ? `ไม่ได้คำตอบ: ${exchange.failure ?? "ล้มเหลว"}` : "รอคำตอบจากเซิร์ฟเวอร์…";
+  return el("p", "body-note", text);
+}
+
+function rawHttp(firstLine, headers, part) {
+  const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+  const body = part.body_error ? `(${part.body_error})` : part.body ?? "";
+  return el("pre", "raw-http", [firstLine, ...lines, "", body].join("\n"));
+}
+
+function field(label, ...value) {
+  return el("div", "field", el("dt", null, label), el("dd", null, ...value));
+}
+
+const DETAIL_TABS = [
+  { id: "overview", label: "ภาพรวม" },
+  { id: "request", label: "ขาออก (Request)" },
+  { id: "response", label: "ขาเข้า (Response)" },
+  { id: "raw", label: "ดิบ (Raw)" },
+];
+
+/** คอลัมน์ขวา: หัว Detail + แท็บ ภาพรวม / ขาออก / ขาเข้า / ดิบ
+ *  สอนแนวคิด: state ใน object — จำแท็บที่เลือกไว้ (this.tab) แม้จะเปลี่ยนไปดู Exchange อื่น */
+class DetailView {
+  constructor(element) {
+    this.element = element;
+    this.tab = "overview";
+    this.exchange = null;
+    this.render();
+  }
+
+  show(exchange) {
+    this.exchange = exchange;
+    this.render();
+  }
+
+  choose(tab) {
+    this.tab = tab;
+    this.render();
+  }
+
+  render() {
+    if (!this.exchange) {
+      this.element.replaceChildren(el("p", "empty", "เลือก Exchange ทางซ้ายเพื่อดูรายละเอียด"));
+      return;
+    }
+    this.element.replaceChildren(this.head(), this.tabs(), el("div", "tab-panel", ...this.panel()));
+  }
+
+  head() {
+    const exchange = this.exchange;
+    return el(
+      "header",
+      "detail-head",
+      el("div", "detail-line", methodBadge(exchange.request.method), statusBadge(exchange), textSpan("ms", durationText(exchange))),
+      el("p", "detail-url", exchange.request.url),
+      el("p", "detail-summary", exchange.summary),
+    );
+  }
+
+  tabs() {
+    const list = el("div", "tabs");
+    list.setAttribute("role", "tablist");
+    for (const tab of DETAIL_TABS) {
+      const button = el("button", "tab", tab.label);
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", String(tab.id === this.tab));
+      button.addEventListener("click", () => this.choose(tab.id));
+      list.append(button);
+    }
+    return list;
+  }
+
+  panel() {
+    const { request, response } = this.exchange;
+    if (this.tab === "request") {
+      return [el("p", "request-line", requestLine(request)), el("h3", null, "Headers"), headersTable(request.headers),
+        el("h3", null, "Body"), bodyView(request)];
+    }
+    if (this.tab === "response") {
+      if (!response) return [noResponseNote(this.exchange)];
+      return [el("p", "status-line", statusLine(response)), el("h3", null, "Headers"), headersTable(response.headers),
+        el("h3", null, "Body"), bodyView(response)];
+    }
+    if (this.tab === "raw") {
+      return [
+        el("h3", null, "ขาออก (Request)"), rawHttp(requestLine(request), request.headers, request),
+        el("h3", null, "ขาเข้า (Response)"),
+        response ? rawHttp(statusLine(response), response.headers, response) : noResponseNote(this.exchange),
+      ];
+    }
+    return [el("div", "overview", this.requestSide(), this.responseSide())];
+  }
+
+  requestSide() {
+    const request = this.exchange.request;
+    const query = Object.entries(request.query).flatMap(([key, values]) => values.map((value) => [key, value]));
+    return el(
+      "section",
+      "side side-request",
+      el("h3", null, "ขาออก (Request)"),
+      el("dl", null, field("method", methodBadge(request.method)), field("path", el("code", null, request.path)),
+        field("query", query.length ? keyValueTable("query-table", query) : "—")),
+      el("h4", null, "body"),
+      bodyView(request),
+    );
+  }
+
+  responseSide() {
+    const response = this.exchange.response;
+    const side = el("section", "side side-response", el("h3", null, "ขาเข้า (Response)"));
+    if (!response) {
+      side.append(noResponseNote(this.exchange));
+      return side;
+    }
+    side.append(
+      el("dl", null, field("status", statusBadge(this.exchange), ` ${response.status_text}`),
+        field("content-type", el("code", null, contentType(response.headers)))),
+      el("h4", null, "body"),
+      bodyView(response),
+    );
+    return side;
+  }
+}
+
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
+  const detail = new DetailView(document.getElementById("detail"));
   const timeline = new TimelineView(
     document.getElementById("timeline"),
     document.getElementById("timeline-empty"),
+    (exchange) => detail.show(exchange),
   );
   const status = new StatusView(document.getElementById("chrome-status"));
   const chromeHelp = new ChromeHelpView(
