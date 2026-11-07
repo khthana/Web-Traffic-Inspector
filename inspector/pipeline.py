@@ -15,7 +15,7 @@ from inspector.capture_events import (
     ResponseReceived,
     TabChanged,
 )
-from inspector.correlator import Change, Correlator
+from inspector.correlator import Correlation, Correlator
 from inspector.http_parts import body_kind, split_url
 from inspector.models import ClickEvent, HttpExchange, HttpRequest, HttpResponse, InspectorStatus, TabInfo
 from inspector.redactor import Redactor
@@ -41,7 +41,9 @@ class InspectorPipeline:
         self._next_click = 0
         self._pending: dict[str, str] = {}  # request_key → exchange id
         self._tabs: dict[str, TabInfo] = {}
-        self.status = InspectorStatus(chrome_launch_command=chrome_launch_command)
+        self.status = InspectorStatus(
+            chrome_launch_command=chrome_launch_command, correlation_window_ms=correlator.window_ms
+        )
 
     def handle(self, event: CaptureEvent) -> None:
         """รับ Capture event หนึ่งตัว (ต้องเรียกบน event loop ของ app)"""
@@ -94,11 +96,12 @@ class InspectorPipeline:
             body_unscanned=body.unscanned,
         )
         exchange_id = self._new_id()
-        group = self._correlator.exchange(exchange_id, event.tab_id, page_url, event.ts)
-        self._save_interaction(group)
+        correlation = self._correlator.exchange(exchange_id, event.tab_id, page_url, event.ts)
+        # Click/Page-load interaction ที่ได้ Exchange เพิ่มไม่ต้องประกาศ เพราะ exchange.new มี interaction_id อยู่แล้ว
+        self._save_interaction(correlation, announce=correlation.is_new or correlation.interaction.kind == "background")
         exchange = HttpExchange(
             id=exchange_id,
-            interaction_id=group.interaction.id,
+            interaction_id=correlation.interaction.id,
             tab_id=event.tab_id,
             page_url=page_url,
             resource_type=event.resource_type,
@@ -170,12 +173,15 @@ class InspectorPipeline:
     def _on_navigation(self, event: NavigationOccurred) -> None:
         self._save_interaction(self._correlator.navigation(event.tab_id, self._redactor.url(event.url), event.ts))
 
-    def _save_interaction(self, change: Change) -> None:
-        self._store.put_interaction(change.interaction)
-        if not change.announce:
-            return
-        message = "interaction.new" if change.is_new else "interaction.update"
-        self._broadcaster.publish(message, change.interaction.model_dump())
+    def _save_interaction(self, correlation: Correlation, announce: bool = True) -> None:
+        if correlation.is_new:
+            for evicted_id in self._store.add_interaction(correlation.interaction):
+                self._correlator.forget(evicted_id)  # จะได้ไม่มี Exchange ใหม่ไปเข้า Interaction ที่ไม่มีแล้ว
+        else:
+            self._store.replace_interaction(correlation.interaction)
+        if announce:
+            message = "interaction.new" if correlation.is_new else "interaction.update"
+            self._broadcaster.publish(message, correlation.interaction.model_dump())
 
     def _on_tab(self, event: TabChanged) -> None:
         if event.open:

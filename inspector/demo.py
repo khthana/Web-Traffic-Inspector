@@ -54,7 +54,7 @@ class DemoScript:
 
             await self.click("a", "โน้ตบุ๊ก", href=f"{SITE}/product/notebooks")
             await asyncio.sleep(0.3)
-            await self.navigate(f"{SITE}/product/notebooks", announce_page_load=False)
+            await self.navigate(f"{SITE}/product/notebooks")  # เกิดหลังคลิกไม่นาน จึงรวมเข้า Click interaction
             await self.call("POST", "product/category/data", 200, {"status": "SUCCESS", "data": [{"price": 18990}]})
             await self.call("POST", "product/get", 404, {"status": "NOT_FOUND"})
             await asyncio.sleep(5)
@@ -64,11 +64,9 @@ class DemoScript:
         self._pipeline.handle(ClickCaptured(tab_id=TAB, page_url=self._page, ts=now_ms(), element=element))
         await asyncio.sleep(0.2)
 
-    async def navigate(self, url: str, announce_page_load: bool = True) -> None:
-        """เปลี่ยนหน้า (ถ้าเกิดหลังคลิกไม่นาน pipeline จะรวมเข้าการ์ดคลิกเอง)"""
+    async def navigate(self, url: str) -> None:
         self._page = url
         self._pipeline.handle(NavigationOccurred(tab_id=TAB, url=url, ts=now_ms()))
-        await asyncio.sleep(0.2 if announce_page_load else 0)
 
     async def call(self, method: str, name: str, status: int, body: dict[str, Any]) -> None:
         key = f"demo-{next(self._keys)}"

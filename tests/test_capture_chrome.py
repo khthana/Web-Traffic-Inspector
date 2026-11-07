@@ -171,7 +171,7 @@ class LiveInspector:
 
     def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
         self.pipeline = InspectorPipeline(
-            store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor(), correlator=Correlator()
+            store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor(), correlator=Correlator(window_ms=1500)
         )
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(

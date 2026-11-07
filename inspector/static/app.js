@@ -51,6 +51,7 @@ class TimelineView {
     const existing = this.cards.get(interaction.id);
     if (existing) {
       existing.querySelector(".card-head").replaceWith(cardHead(interaction));
+      if (interaction.exchange_ids.length > 0) existing.classList.remove("is-empty");
       return;
     }
     const card = renderCard(interaction);
@@ -88,7 +89,9 @@ const KIND_ICONS = {
 
 function renderCard(interaction) {
   const card = document.createElement("li");
-  card.className = `card kind-${interaction.kind} is-empty`;
+  card.className = `card kind-${interaction.kind}`;
+  // ดูจาก exchange_ids ไม่ใช่จากแถวที่วาดอยู่ เพราะ Exchange เก่าอาจถูกตัดออกจาก store ไปแล้ว
+  card.classList.toggle("is-empty", interaction.exchange_ids.length === 0);
   card.dataset.id = interaction.id;
   const rows = document.createElement("ol");
   rows.className = "exchange-list";
@@ -267,6 +270,8 @@ function main() {
   const showStatus = (data) => {
     status.show(data);
     chromeHelp.show(data);
+    // CSS ใช้ค่านี้รอให้ครบ Correlation window ก่อนบอกว่าคลิกนี้ "ไม่มี API call"
+    document.documentElement.style.setProperty("--correlation-window", `${data.correlation_window_ms}ms`);
   };
 
   const handlers = {

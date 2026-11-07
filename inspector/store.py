@@ -34,11 +34,20 @@ class EventStore:
     def get_exchange(self, exchange_id: str) -> HttpExchange | None:
         return self._exchanges.get(exchange_id)
 
-    def put_interaction(self, interaction: Interaction) -> None:
-        """เพิ่ม Interaction ใหม่ หรือแทนที่ตัวเดิมโดยไม่เปลี่ยนลำดับ (การ์ดจึงไม่กระโดดขึ้นบน)"""
+    def add_interaction(self, interaction: Interaction) -> list[str]:
+        """เพิ่ม Interaction ใหม่ ถ้าเกินเพดานให้ตัดตัวเก่าสุดทิ้ง คืน id ของตัวที่ถูกตัด"""
         self._interactions[interaction.id] = interaction
+        evicted: list[str] = []
         while len(self._interactions) > self._max:
-            del self._interactions[next(iter(self._interactions))]
+            oldest = next(iter(self._interactions))
+            del self._interactions[oldest]
+            evicted.append(oldest)
+        return evicted
+
+    def replace_interaction(self, interaction: Interaction) -> None:
+        """แทนที่ Interaction เดิมโดยไม่เปลี่ยนลำดับ ถ้าถูกตัดทิ้งไปแล้วก็ไม่ทำอะไร"""
+        if interaction.id in self._interactions:
+            self._interactions[interaction.id] = interaction
 
     def interactions(self) -> list[Interaction]:
         return list(self._interactions.values())

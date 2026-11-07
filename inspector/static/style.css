@@ -32,7 +32,7 @@
     --ok: #4cc26a;
     --warn: #f0a33a;
     --warn-bg: #3a2c10;
-  --highlight: #1d3352;
+    --highlight: #1d3352;
     --bad: #ff7a70;
     --neutral: #9aa3b0;
     --get: #5aa9ff;
@@ -154,8 +154,8 @@ body {
 .card-meta { color: var(--muted); font-size: .85em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .no-calls { display: none; color: var(--muted); font-size: .9em; padding: 4px 0 6px; }
-/* โผล่หลัง Correlation window (1.5 วินาที) จะได้ไม่กะพริบก่อน request มาถึง */
-.card.is-empty .no-calls { display: block; animation: appear-later 1.5s step-end; }
+/* โผล่หลังครบ Correlation window (JS ตั้งค่าจาก status) จะได้ไม่กะพริบก่อน Exchange มาถึง */
+.card.is-empty .no-calls { display: block; animation: appear-later var(--correlation-window, 1.5s) step-end; }
 @keyframes appear-later { from { visibility: hidden; } to { visibility: visible; } }
 
 .exchange {

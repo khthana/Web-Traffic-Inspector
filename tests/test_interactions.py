@@ -151,3 +151,46 @@ def test_click_urls_are_redacted(harness: Harness) -> None:
     assert interaction["page_url"] == "https://shop.example/?session=••••"
     assert interaction["click"]["page_url"] == "https://shop.example/?session=••••"
     assert interaction["click"]["element"]["href"] == "https://shop.example/next?token=••••"
+
+
+def test_correlation_window_edges(harness: Harness) -> None:
+    harness.feed(
+        click(T0),
+        request(T0 - 1, "/api/before-click"),  # มาถึงหลังคลิก แต่เริ่มก่อนคลิก จึงไม่ใช่ผลของคลิก
+        request(T0 + 1500, "/api/edge"),
+        navigation(T0 + 1500 + 1, "https://www.advice.co.th/late"),  # เลย window ของคลิกแล้ว
+    )
+
+    assert grouping(harness) == [("click", ["/api/edge"]), ("background", ["/api/before-click"]), ("page_load", [])]
+
+
+def test_refresh_after_click_navigation_opens_page_load(harness: Harness) -> None:
+    harness.feed(
+        click(T0, tag="a", text="โน้ตบุ๊ก"),
+        navigation(T0 + 500, "https://www.advice.co.th/product/notebooks"),
+        navigation(T0 + 3000, "https://www.advice.co.th/product/notebooks"),  # กด refresh เอง
+        request(T0 + 3100, "/api/category"),
+    )
+
+    assert grouping(harness) == [("click", []), ("page_load", ["/api/category"])]
+    assert interactions(harness)[0]["navigated_to"] == "https://www.advice.co.th/product/notebooks"
+
+
+def test_evicted_background_interaction_is_replaced_not_revived(harness: Harness) -> None:
+    harness.feed(request(T0, "/api/poll-1", tab_id="tab-1"))
+    harness.feed(*[click(T0 + n, tab_id="tab-2") for n in range(1, 501)])  # ดัน Background ของ tab-1 ออกจาก store
+
+    with harness.client.websocket_connect("/ws") as ws:
+        harness.receive(ws)  # snapshot
+        harness.feed(request(T0 + 1000, "/api/poll-2", tab_id="tab-1"))
+        opened = harness.receive(ws)
+        exchange = harness.receive(ws)
+
+    assert opened["type"] == "interaction.new"  # UI ได้การ์ดใหม่ ไม่ใช่อัปเดตการ์ดที่ไม่มีอยู่แล้ว
+    assert exchange["data"]["interaction_id"] == opened["data"]["id"]
+    assert len(interactions(harness)) == 500
+    assert grouping(harness)[-1] == ("background", ["/api/poll-2"])
+
+
+def test_status_tells_ui_the_correlation_window(harness: Harness) -> None:
+    assert harness.get("/api/status")["correlation_window_ms"] == 1500

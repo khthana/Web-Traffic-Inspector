@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8000, help="พอร์ตของหน้า Inspector (ค่าเริ่มต้น 8000)")
     parser.add_argument("--max-exchanges", type=int, default=500, help="จำนวน Exchange สูงสุดที่เก็บในหน่วยความจำ")
     parser.add_argument(
-        "--window-ms", type=float, default=1500, help="Correlation window: ช่วงเวลาหลังคลิกที่นับ request เป็นผลของคลิก (ms)"
+        "--window-ms", type=float, default=1500, help="Correlation window: ช่วงเวลาหลังคลิกที่นับ Exchange เป็นผลของคลิก (ms)"
     )
     parser.add_argument("--no-open", action="store_true", help="ไม่ต้องเปิดหน้า Inspector ในเบราว์เซอร์ให้อัตโนมัติ")
     parser.add_argument(
