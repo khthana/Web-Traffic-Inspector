@@ -16,7 +16,7 @@ from inspector.capture_events import (
     TabChanged,
 )
 from inspector.correlator import Correlation, Correlator
-from inspector.filters import FilterSettings
+from inspector.filters import CUSTOM, FilterSettings
 from inspector.http_parts import body_kind, split_url
 from inspector.models import (
     ClickEvent,
@@ -33,7 +33,10 @@ from inspector.store import EventStore
 
 
 class InspectorPipeline:
-    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → store → broadcast"""
+    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → store → broadcast
+
+    กรองหลัง Redaction ได้ผลเท่ากัน เพราะกฎการกรองดูแค่ host, path และชนิด ซึ่ง Redaction ไม่แตะ
+    """
 
     def __init__(
         self,
@@ -94,7 +97,7 @@ class InspectorPipeline:
 
         ชื่อไม่รู้จัก หรือส่งกฎมากับ Preset ที่ไม่ใช่ `custom` → ValueError (ไม่เปลี่ยนอะไร)
         """
-        if update.rules is not None and update.selected != "custom":
+        if update.rules is not None and update.selected != CUSTOM:
             raise ValueError("แก้กฎได้เฉพาะ preset custom (Preset จากไฟล์แก้จากหน้าเว็บไม่ได้)")
         if update.rules is None:
             self._filters.select(update.selected)
@@ -102,9 +105,13 @@ class InspectorPipeline:
             self._filters.edit_custom(update.rules)
         self._chain = self._filters.chain()
         self._redactor = self._redactor.with_extra_keys(self._filters.current.redact_keys)
-        self._store.refilter(self._chain.hidden_reason)
+        self._store.refilter(self._chain.apply)
         self.status = self.status.model_copy(
-            update={"preset": self._filters.current.name, "hidden_count": self._store.hidden_count}
+            update={
+                "preset": self._filters.current.name,
+                "hidden_count": self._store.hidden_count,
+                "filters_version": self.status.filters_version + 1,
+            }
         )
         self._broadcaster.publish("snapshot", self.snapshot())
         return self._filters.view()
@@ -153,8 +160,7 @@ class InspectorPipeline:
                 or request.body != event.post_data
             ),
         )
-        reason = self._chain.hidden_reason(exchange)
-        exchange = exchange.model_copy(update={"hidden": reason is not None, "hidden_reason": reason})
+        exchange = self._chain.apply(exchange)
         self._pending[event.request_key] = exchange.id
         self._store.add_exchange(exchange)
         self._broadcaster.publish("exchange.new", exchange.model_dump())

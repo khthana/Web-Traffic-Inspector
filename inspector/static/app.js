@@ -109,13 +109,15 @@ function renderCard(interaction) {
 /** การ์ดที่ไม่มี Exchange ที่มองเห็นได้ class "no-visible": การ์ดคลิกบอกว่าไม่มี API call
  *  ส่วนการ์ดโหลดหน้า/เบื้องหลังถูกซ่อนไปเลย (ยกเว้นตอนเปิดปุ่ม "ซ่อน N รายการ") */
 function refreshCard(card) {
-  const drawn = card.querySelectorAll(".exchange").length;
-  const hidden = card.querySelectorAll(".exchange.is-hidden").length;
-  // Exchange ที่อยู่ใน exchange_ids แต่ไม่มีแถว คือถูกตัดออกจาก store ไปแล้ว: ไม่รู้สถานะ จึงนับเป็นมองเห็น
-  const dropped = Math.max(Number(card.dataset.total) - drawn, 0);
-  card.classList.toggle("no-visible", drawn - hidden + dropped === 0);
+  const rows = [...card.querySelectorAll(".exchange")];
+  const visible = rows.filter((row) => !row.classList.contains("is-hidden")).length;
+  const tracking = rows.filter((row) => row.dataset.tracking === "true").length;
+  // Exchange ที่อยู่ใน exchange_ids แต่ไม่มีแถว คือถูกตัดออกจาก store ไปแล้ว ไม่รู้ว่าเคยมองเห็นไหม:
+  // การ์ดคลิกนับเป็นมองเห็น (จะได้ไม่บอกผิดว่า "ไม่มี API call") การ์ดอื่นไม่มีอะไรให้ดูแล้วจึงซ่อนได้
+  const dropped = card.classList.contains("kind-click") ? Math.max(Number(card.dataset.total) - rows.length, 0) : 0;
+  card.classList.toggle("no-visible", visible + dropped === 0);
   const note = card.querySelector(".hidden-note");
-  if (note) note.textContent = hidden > 0 ? `(มี tracking ${hidden} รายการที่ซ่อนอยู่)` : "";
+  if (note) note.textContent = tracking > 0 ? `(มี tracking ${tracking} รายการที่ซ่อนอยู่)` : "";
 }
 
 function cardHead(interaction) {
@@ -146,6 +148,7 @@ function renderExchangeRow(exchange) {
   const li = document.createElement("li");
   li.className = exchange.hidden ? "exchange is-hidden" : "exchange";
   li.dataset.id = exchange.id;
+  li.dataset.tracking = String(Boolean(exchange.hidden_reason?.startsWith("tracking:")));
   li.append(
     badge(exchange.request.method, `method-${exchange.request.method}`),
     // LRM ครอบไว้ เพื่อไม่ให้ direction: rtl (ที่ใช้ตัด path จากซ้าย) ย้าย "/" ไปไว้ท้าย
@@ -309,9 +312,10 @@ class FilterControls {
     this.render(await (await fetch("/api/filters")).json());
   }
 
-  /** client อื่นเปลี่ยน Preset: status บอกชื่อใหม่ จึงโหลดกฎมาใหม่ */
+  /** มีคนเปลี่ยนกฎ (อาจเป็นหน้าจออื่น): status บอกเลขรุ่นใหม่ จึงโหลดกฎมาใหม่ ฟอร์มจะได้ไม่ทับกฎของคนอื่น */
   show(status) {
-    if (this.view && status.preset !== this.view.selected) this.load();
+    if (this.version !== undefined && status.filters_version !== this.version) this.load();
+    this.version = status.filters_version;
   }
 
   async choose(name) {

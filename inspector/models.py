@@ -108,6 +108,7 @@ class InspectorStatus(BaseModel):
     paused: bool = False
     hidden_count: int = 0  # Hidden exchange ทั้งหมดตั้งแต่ Clear (รวมตัวที่หลุดจาก buffer แล้ว)
     preset: str = "all"
+    filters_version: int = 0  # เพิ่มทุกครั้งที่เปลี่ยนกฎการกรอง: client อื่นรู้ว่าต้องโหลดกฎใหม่
     tabs: list[TabInfo] = []
     chrome_launch_command: str = ""  # คำสั่งเปิด Chrome โหมด debug ตาม OS ของเครื่องนี้
     correlation_window_ms: float = 1500  # UI ใช้รอก่อนบอกว่าคลิกนี้ "ไม่มี API call"

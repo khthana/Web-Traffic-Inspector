@@ -201,3 +201,30 @@ def test_presets_live_in_json_files_and_there_is_no_filters_json() -> None:
 def test_blocklist_host_must_match_whole_labels(harness: Harness) -> None:
     harness.feed(request("https://notclarity.ms/api"), request("https://facebook.com.example/api"))
     assert set(hidden_reasons(harness).values()) == {None}
+
+
+def test_changing_preset_never_drops_stored_exchanges() -> None:
+    with build_harness(max_exchanges=2, preset="advice") as harness:
+        harness.feed(request(CART), request(SEARCH), request(OTHER_API), request(ADVICE_PAGE_DATA))
+        put_filters(harness, {"selected": "all"})  # ตัวที่เคยซ่อนย้ายมาฝั่งที่มองเห็น: buffer ล้นชั่วคราวได้
+
+        assert list(exchanges(harness)) == [CART, SEARCH, OTHER_API, ADVICE_PAGE_DATA]
+        put_filters(harness, {"selected": "advice"})
+        assert list(exchanges(harness)) == [CART, SEARCH, OTHER_API, ADVICE_PAGE_DATA]
+
+
+def test_dropped_tracking_stays_in_hidden_count_but_dropped_out_of_focus_follows_the_preset() -> None:
+    with build_harness(max_exchanges=2, preset="advice") as harness:
+        harness.feed(*(request(f"{OTHER_API}?n={n}") for n in range(3)))
+        harness.feed(*(request(f"https://www.clarity.ms/collect?n={n}") for n in range(3)))
+        assert harness.get("/api/status")["hidden_count"] == 6
+
+        put_filters(harness, {"selected": "all"})
+        assert harness.get("/api/status")["hidden_count"] == 3  # tracking 2 ตัวใน buffer + 1 ตัวที่หลุดไปแล้ว
+
+
+def test_other_clients_learn_that_custom_rules_changed(harness: Harness) -> None:
+    put_filters(harness, {"selected": "custom"})
+    before = harness.get("/api/status")["filters_version"]
+    put_filters(harness, {"selected": "custom", "rules": {"focus_hosts": ["api.other.example"]}})
+    assert harness.get("/api/status")["filters_version"] > before

@@ -15,6 +15,7 @@ from inspector.models import FilterRules, FilterView, HttpExchange, Preset, Pres
 PRESETS_DIR = Path(__file__).parent.parent / "presets"
 CUSTOM = "custom"
 CUSTOM_LABEL = "กำหนดเอง…"
+TRACKING = "tracking: "  # คำนำหน้าของ Hidden reason แบบ Blocklist
 
 # Blocklist พื้นฐาน (SPEC ข้อ 4.3) ฝังในโค้ด ถอดออกไม่ได้
 BASE_BLOCK_HOSTS = (
@@ -54,7 +55,7 @@ class FilterRule(ABC):
         """คืน Hidden reason ถ้ากฎนี้ทำให้ Exchange ถูกซ่อน ไม่อย่างนั้นคืน None"""
         covered = self.covers(exchange)
         if self.focus_preset is None:
-            return f"tracking: {exchange.request.host}" if covered else None
+            return f"{TRACKING}{exchange.request.host}" if covered else None
         return None if covered else f"นอกโฟกัส: preset {self.focus_preset}"
 
     @abstractmethod
@@ -137,6 +138,16 @@ class FilterChain:
     def hidden_reason(self, exchange: HttpExchange) -> str | None:
         """Hidden reason ของ Exchange นี้ ถ้าไม่ถูกซ่อนคืน None"""
         return next((reason for rule in self._rules if (reason := rule.matches(exchange)) is not None), None)
+
+    def apply(self, exchange: HttpExchange) -> HttpExchange:
+        """Exchange ตัวใหม่ที่ตั้ง `hidden` และ `hidden_reason` ตามกฎชุดนี้แล้ว"""
+        reason = self.hidden_reason(exchange)
+        return exchange.model_copy(update={"hidden": reason is not None, "hidden_reason": reason})
+
+
+def is_tracking(exchange: HttpExchange) -> bool:
+    """ถูกซ่อนเพราะ Blocklist (ไม่ขึ้นกับว่าเลือก Preset ไหน ต่างจากเหตุผลแบบนอกโฟกัส)"""
+    return exchange.hidden_reason is not None and exchange.hidden_reason.startswith(TRACKING)
 
 
 def load_presets(directory: Path) -> dict[str, Preset]:
