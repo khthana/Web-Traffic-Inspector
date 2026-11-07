@@ -314,10 +314,12 @@ class StatusView {
   show(status) {
     this.element.dataset.state = status.chrome;
     this.element.dataset.paused = String(status.paused);
+    this.element.dataset.mode = status.mode;
     this.element.querySelector(".label").textContent = this.label(status);
   }
 
   label(status) {
+    if (status.mode === "playback") return `โหมดเล่นซ้ำ: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
     if (status.chrome !== "connected") return "ไม่พบ Chrome";
     return status.paused ? "หยุดชั่วคราว" : `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`;
   }
@@ -334,7 +336,8 @@ class ChromeHelpView {
   }
 
   show(status) {
-    const connected = status.chrome === "connected";
+    // Recording playback ไม่ต่อ Chrome โดยตั้งใจ จึงไม่ต้องสอนวิธีเปิด Chrome หรือเตือนว่าหลุด
+    const connected = status.chrome === "connected" || status.mode === "playback";
     if (connected) this.wasConnected = true;
     this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
     this.setup.hidden = connected || !status.chrome_launch_command; // โหมด --demo ไม่ต้องใช้ Chrome
@@ -700,10 +703,19 @@ class DetailView {
       "header",
       "detail-head",
       el("div", "detail-line", methodBadge(exchange.request.method), statusBadge(exchange), textSpan("ms", durationText(exchange)),
-        textSpan("detail-clock", clockTime(exchange.started_at))),
+        textSpan("detail-clock", clockTime(exchange.started_at)), this.exportLink()),
       el("p", "detail-url", exchange.request.url),
       el("p", "detail-summary", exchange.summary),
     );
+  }
+
+  /** ดาวน์โหลด Recording ของ Interaction ที่ Exchange นี้อยู่ (ใช้เป็นโจทย์แลบได้ทีละเรื่อง) */
+  exportLink() {
+    if (!this.interaction) return null;
+    const link = el("a", "export-one", "Export Interaction นี้");
+    link.href = `/api/export?interaction_id=${encodeURIComponent(this.interaction.id)}`;
+    link.download = "";
+    return link;
   }
 
   tabs() {
@@ -844,6 +856,7 @@ class CaptureControls {
 
   show(status) {
     this.paused = status.paused;
+    this.pauseButton.hidden = status.mode === "playback"; // ไม่มีอะไรให้เก็บ: หยุด/เริ่มต่อไม่มีความหมาย
     this.pauseButton.textContent = status.paused ? "เริ่มต่อ" : "หยุด";
     this.pauseButton.setAttribute("aria-pressed", String(status.paused));
     this.banner.hidden = !status.paused;
@@ -851,6 +864,7 @@ class CaptureControls {
 
   /** เปลี่ยน this.paused ทันที กดซ้ำเร็วๆ ก่อน status กลับมาจึงสลับถูกทาง (status จาก server ยืนยันอีกครั้ง) */
   togglePause() {
+    if (this.pauseButton.hidden) return Promise.resolve();
     this.paused = !this.paused;
     return fetch(this.paused ? "/api/pause" : "/api/resume", { method: "POST" });
   }

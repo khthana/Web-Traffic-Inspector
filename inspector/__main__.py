@@ -7,6 +7,7 @@ bind เฉพาะ 127.0.0.1 เสมอ (ไม่เปิดให้เ�
 import argparse
 import asyncio
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
@@ -18,6 +19,8 @@ from inspector.correlator import Correlator
 from inspector.demo import feed_demo_events
 from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
+from inspector.models import Recording
+from inspector.recording import read_recording
 from inspector.redactor import Redactor
 from inspector.store import EventStore
 from inspector.summarizer import Summarizer
@@ -37,11 +40,16 @@ def parse_args() -> argparse.Namespace:
         "--cdp-url", default="http://127.0.0.1:9222", help="ที่อยู่ CDP ของ Chrome (ค่าเริ่มต้น http://127.0.0.1:9222)"
     )
     parser.add_argument("--preset", default="all", help="Preset การกรองตอนเริ่ม เช่น all หรือ advice (ไฟล์ใน presets/)")
-    parser.add_argument("--demo", action="store_true", help="ป้อนข้อมูลตัวอย่างแทน Chrome (ใช้ลอง UI)")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--demo", action="store_true", help="ป้อนข้อมูลตัวอย่างแทน Chrome (ใช้ลอง UI)")
+    source.add_argument(
+        "--replay-file", type=Path, metavar="PATH",
+        help="Recording playback: เปิดไฟล์ที่ export ไว้ดูโดยไม่ต่อ Chrome และไม่ส่ง request ใดๆ ออกไป",
+    )
     return parser.parse_args()
 
 
-async def run(args: argparse.Namespace, filters: FilterSettings) -> None:
+async def run(args: argparse.Namespace, filters: FilterSettings, recording: Recording | None) -> None:
     store = EventStore(max_exchanges=args.max_exchanges)
     broadcaster = Broadcaster()
     pipeline = InspectorPipeline(
@@ -51,13 +59,15 @@ async def run(args: argparse.Namespace, filters: FilterSettings) -> None:
         correlator=Correlator(window_ms=args.window_ms),
         filters=filters,
         summarizer=Summarizer(),
-        chrome_launch_command="" if args.demo else chrome_launch_command(args.cdp_url),
+        chrome_launch_command="" if args.demo or recording else chrome_launch_command(args.cdp_url),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=args.port, log_level="warning"))
 
     background: list[asyncio.Task[None]] = []
-    if args.demo:
+    if recording is not None:
+        pipeline.play(recording, args.replay_file.name)  # ไม่มีงานเบื้องหลัง: ไม่ต่อ Chrome เลย
+    elif args.demo:
         background.append(asyncio.create_task(feed_demo_events(pipeline)))
     else:
         # หน้า Inspector เองไม่ใช่ Watched tab (กันไม่ให้ดัก traffic ของตัวเอง)
@@ -81,10 +91,11 @@ def main() -> None:
     args = parse_args()
     try:
         filters = FilterSettings(load_presets(PRESETS_DIR), selected=args.preset)
+        recording = read_recording(args.replay_file) if args.replay_file else None
     except ValueError as error:
         raise SystemExit(str(error)) from error
     try:
-        asyncio.run(run(args, filters))
+        asyncio.run(run(args, filters, recording))
     except KeyboardInterrupt:
         pass
 

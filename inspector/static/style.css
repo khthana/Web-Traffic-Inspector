@@ -96,6 +96,9 @@ body {
   color: var(--fg);
 }
 .tool-button { cursor: pointer; white-space: nowrap; }
+a.tool-button { text-decoration: none; }
+.chrome-status[data-mode="playback"] .dot { background: var(--get); }
+.export-one { margin-left: auto; font-size: .85em; color: var(--get); }
 .tool-button[aria-pressed="true"] { background: var(--surface); border-color: var(--muted); font-weight: 600; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 

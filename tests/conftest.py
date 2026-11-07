@@ -16,6 +16,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
 from inspector.chrome import chrome_launch_command
+from inspector.models import Recording
 from inspector.pipeline import InspectorPipeline
 from inspector.store import EventStore
 
@@ -56,11 +57,15 @@ class Harness:
 
 
 @contextmanager
-def build_harness(max_exchanges: int = 500, preset: str = "all") -> Iterator[Harness]:
-    """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges` และ `--preset`)"""
+def build_harness(
+    max_exchanges: int = 500, preset: str = "all", recording: Recording | None = None, recording_file: str = ""
+) -> Iterator[Harness]:
+    """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges`, `--preset` และ `--replay-file`)"""
     store = EventStore(max_exchanges=max_exchanges)
     broadcaster = Broadcaster()
     pipeline = new_pipeline(store, broadcaster, preset, chrome_launch_command("http://127.0.0.1:9222"))
+    if recording is not None:
+        pipeline.play(recording, recording_file)
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)

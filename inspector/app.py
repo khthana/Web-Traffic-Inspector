@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from inspector.broadcaster import Broadcaster
-from inspector.models import FilterUpdate, FilterView, HttpExchange, InspectorStatus
+from inspector.models import FilterUpdate, FilterView, HttpExchange, InspectorStatus, Recording
 from inspector.pipeline import InspectorPipeline
+from inspector.recording import download_name
 from inspector.store import EventStore
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -45,6 +46,19 @@ def create_app(pipeline: InspectorPipeline, store: EventStore, broadcaster: Broa
         if exchange is None:
             raise HTTPException(status_code=404, detail="ไม่พบ Exchange นี้ (อาจถูกล้างไปแล้ว)")
         return exchange
+
+    @app.get("/api/export", response_model=Recording)
+    def export(interaction_id: str | None = None) -> JSONResponse:
+        """ดาวน์โหลด Recording (JSON ที่ผ่าน Redaction แล้ว) ของทั้ง session หรือ Interaction เดียว"""
+        try:
+            recording = pipeline.recording(interaction_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="ไม่พบ Interaction นี้ (อาจถูกล้างไปแล้ว)") from error
+        file_name = download_name(recording, interaction_id)
+        return JSONResponse(
+            recording.model_dump(mode="json"),
+            headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+        )
 
     @app.post("/api/pause")
     def pause() -> InspectorStatus:

@@ -158,3 +158,16 @@ class FilterUpdate(BaseModel):
 
     selected: str
     rules: FilterRules | None = None
+
+
+class Recording(BaseModel):
+    """ไฟล์ Recording: Interaction และ Exchange ที่ export ออกมา (ผ่าน Redaction แล้ว เพราะมาจาก store)
+
+    ใช้เป็นสื่อสอนหรือโจทย์แลบ แล้วเปิดกลับมาดูด้วย `--replay-file` (Recording playback)
+    """
+
+    format: Literal["web-traffic-inspector/recording"] = "web-traffic-inspector/recording"
+    version: Literal[1] = 1
+    exported_at: float
+    interactions: list[Interaction]
+    exchanges: list[HttpExchange]
