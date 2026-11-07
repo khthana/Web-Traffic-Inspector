@@ -29,10 +29,19 @@
       <button type="button" class="tool-button" id="pause-toggle" aria-pressed="false"
         title="หยุดเก็บชั่วคราวระหว่างอธิบาย (คีย์ลัด Space)">หยุด</button>
       <button type="button" class="tool-button" id="clear" title="ล้าง Timeline ทั้งหมด (คีย์ลัด C)">ล้าง</button>
+      <div class="font-size" role="group" aria-label="ขนาดตัวอักษร">
+        <button type="button" class="tool-button" id="font-smaller" title="ตัวอักษรเล็กลง">A−</button>
+        <button type="button" class="tool-button" id="font-bigger" title="ตัวอักษรใหญ่ขึ้น">A+</button>
+      </div>
+      <button type="button" class="tool-button" id="theme-toggle" title="สลับธีมสว่าง/มืด">ธีมมืด</button>
     </div>
   </header>
 
-  <div class="banner" id="socket-banner" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
+  <div class="banner banner-ethics" id="ethics-banner" role="note" hidden>
+    <span>ใช้ดู traffic ของตัวเองเพื่อการเรียนรู้เท่านั้น อย่านำ API ของเว็บอื่นไปเรียกซ้ำหรือดึงข้อมูลจำนวนมาก</span>
+    <button type="button" class="tool-button" id="ethics-close">รับทราบ ปิด</button>
+  </div>
+  <div class="banner" id="socket-banner" role="status" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
   <div class="banner banner-warn" id="paused-banner" role="status" hidden>
     หยุดเก็บชั่วคราว — กด Space เพื่อเริ่มต่อ
   </div>
@@ -65,9 +74,13 @@
         <button type="button" id="copy-command">คัดลอกคำสั่ง</button>
         <p class="hint">Inspector จะเชื่อมให้เองภายในไม่กี่วินาทีหลัง Chrome เปิด</p>
       </div>
+      <div class="new-items-dock">
+        <button type="button" class="new-items" id="new-items" hidden></button>
+      </div>
       <p class="empty" id="timeline-empty">พร้อมแล้ว — ลองเปิดเว็บใน Chrome แล้วกดปุ่มสักปุ่ม</p>
       <ol class="card-list" id="timeline"></ol>
     </section>
+    <button type="button" class="tool-button detail-back" id="detail-back">← กลับไป Timeline</button>
     <section class="detail" id="detail" aria-label="Detail"></section>
   </main>
 

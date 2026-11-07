@@ -44,7 +44,3 @@ DARK = {**LIGHT, **theme(':root[data-theme="dark"]')}
 def test_badges_and_small_text_reach_4_5_to_1(colors: dict[str, str], fg: str, bg: str) -> None:
     assert contrast(colors[fg], colors[bg]) >= 4.5, f"{fg} บน {bg}"
 
-
-def test_dark_theme_follows_the_system_setting_with_the_same_colors() -> None:
-    system_dark = theme(':root:not([data-theme="light"])')
-    assert system_dark == theme(':root[data-theme="dark"]')

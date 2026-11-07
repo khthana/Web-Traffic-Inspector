@@ -129,6 +129,44 @@ class TimelineView {
   updateEmpty() {
     this.empty.hidden = this.cards.size > 0;
   }
+
+  focusSelected() {
+    this.rows.get(this.selectedId)?.focus();
+  }
+}
+
+/** ปุ่มลอย "มี N รายการใหม่ ↑": ผู้สอนเลื่อนลงไปดูของเก่าอยู่ การ์ดใหม่ไม่ดึงจอขึ้นไป (Chrome คงตำแหน่งให้เอง:
+ *  scroll anchoring) แค่นับไว้ กดปุ่มหรือเลื่อนกลับขึ้นบนสุดเองแล้วปุ่มหายไป
+ *  สอนแนวคิด: state ใน object — this.count จำจำนวนที่ยังไม่ได้ดู */
+class NewItemsNotice {
+  constructor(scroller, button) {
+    this.scroller = scroller;
+    this.button = button;
+    this.count = 0;
+    scroller.addEventListener("scroll", () => {
+      if (this.atTop()) this.reset();
+    });
+    button.addEventListener("click", () => {
+      scroller.scrollTo({ top: 0 });
+      this.reset();
+    });
+  }
+
+  atTop() {
+    return this.scroller.scrollTop < 1;
+  }
+
+  onNewInteraction() {
+    if (this.atTop()) return; // อยู่บนสุด: เห็นการ์ดใหม่อยู่แล้ว
+    this.count += 1;
+    this.button.textContent = `มี ${this.count} รายการใหม่ ↑`;
+    this.button.hidden = false;
+  }
+
+  reset() {
+    this.count = 0;
+    this.button.hidden = true;
+  }
 }
 
 /** ข้อมูลที่ขึ้นกับชนิดของ Interaction รวมไว้ที่เดียว
@@ -836,8 +874,119 @@ class KeyboardShortcuts {
   }
 }
 
+/** ค่าที่ผู้ใช้เลือกไว้ (ขนาดตัวอักษร ธีม การปิดแถบเตือน) เก็บใน localStorage ของเบราว์เซอร์ ไม่เขียนไฟล์ใดๆ
+ *  เปิดแบบ private หรือเบราว์เซอร์ปิด storage ไว้ก็ยังใช้ได้ แค่จำค่าไม่ได้
+ *  สอนแนวคิด: dependency injection — class อื่นรับ Preferences เข้ามา ไม่เรียก localStorage เอง */
+class Preferences {
+  constructor(storage, prefix = "wti.") {
+    this.storage = storage;
+    this.prefix = prefix;
+  }
+
+  get(key, fallback) {
+    try {
+      return this.storage.getItem(this.prefix + key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  set(key, value) {
+    try {
+      this.storage.setItem(this.prefix + key, String(value));
+    } catch {
+      // จำไม่ได้ก็ไม่เป็นไร ค่าใช้ได้จนปิดหน้า
+    }
+  }
+}
+
+const FONT_SIZES = [14, 17, 20]; // px: ระดับ A− / ปกติ / A+ (SPEC 6.2)
+const DEFAULT_FONT_SIZE = 17;
+
+/** ปุ่ม A− / A+ เปลี่ยนขนาดตัวอักษรทั้งหน้าทีละระดับ สุดทางแล้วปุ่มกดไม่ได้ */
+class FontSizeControl {
+  constructor(smaller, bigger, preferences) {
+    this.smaller = smaller;
+    this.bigger = bigger;
+    this.preferences = preferences;
+    const saved = FONT_SIZES.indexOf(Number(preferences.get("fontSize", DEFAULT_FONT_SIZE)));
+    this.level = saved === -1 ? FONT_SIZES.indexOf(DEFAULT_FONT_SIZE) : saved;
+    smaller.addEventListener("click", () => this.step(-1));
+    bigger.addEventListener("click", () => this.step(1));
+    this.apply();
+  }
+
+  step(direction) {
+    this.level = Math.min(Math.max(this.level + direction, 0), FONT_SIZES.length - 1);
+    this.preferences.set("fontSize", FONT_SIZES[this.level]);
+    this.apply();
+  }
+
+  apply() {
+    document.documentElement.style.setProperty("--font-size", `${FONT_SIZES[this.level]}px`);
+    this.smaller.disabled = this.level === 0;
+    this.bigger.disabled = this.level === FONT_SIZES.length - 1;
+  }
+}
+
+/** สลับธีมสว่าง/มืด ค่าเริ่มต้นสว่าง (โปรเจกเตอร์อ่านง่ายกว่า) สีทั้งหมดเป็น CSS variables ใน style.css */
+class ThemeSwitch {
+  constructor(button, preferences) {
+    this.button = button;
+    this.preferences = preferences;
+    this.theme = preferences.get("theme", "light") === "dark" ? "dark" : "light";
+    button.addEventListener("click", () => this.toggle());
+    this.apply();
+  }
+
+  toggle() {
+    this.theme = this.theme === "dark" ? "light" : "dark";
+    this.preferences.set("theme", this.theme);
+    this.apply();
+  }
+
+  apply() {
+    document.documentElement.dataset.theme = this.theme;
+    this.button.textContent = this.theme === "dark" ? "ธีมสว่าง" : "ธีมมืด"; // บอกว่ากดแล้วจะได้ธีมไหน
+  }
+}
+
+/** แถบเตือนจริยธรรม แสดงตอนเปิดครั้งแรกจนกว่าจะกดปิด (SPEC 10) */
+class EthicsNotice {
+  constructor(banner, closeButton, preferences) {
+    banner.hidden = preferences.get("ethicsDismissed", "") === "yes";
+    closeButton.addEventListener("click", () => {
+      banner.hidden = true;
+      preferences.set("ethicsDismissed", "yes");
+    });
+  }
+}
+
+/** จอแคบกว่า 900 px: Timeline กับ Detail ซ้อนกัน (CSS ดู class detail-open) ผู้สอนเลือก Exchange แล้ว Detail เปิดเต็มจอ
+ *  ปุ่มย้อนกลับพาไปที่แถวเดิมใน Timeline จอกว้างไม่มีผลอะไร เพราะเห็นทั้งสองคอลัมน์อยู่แล้ว */
+class StackedLayout {
+  constructor(layout, backButton, timeline) {
+    this.layout = layout;
+    this.timeline = timeline;
+    backButton.addEventListener("click", () => this.back());
+  }
+
+  openDetail() {
+    this.layout.classList.add("detail-open");
+  }
+
+  back() {
+    this.layout.classList.remove("detail-open");
+    this.timeline.focusSelected();
+  }
+}
+
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
+  const preferences = new Preferences(window.localStorage);
+  new FontSizeControl(document.getElementById("font-smaller"), document.getElementById("font-bigger"), preferences);
+  new ThemeSwitch(document.getElementById("theme-toggle"), preferences);
+  new EthicsNotice(document.getElementById("ethics-banner"), document.getElementById("ethics-close"), preferences);
   const detail = new DetailView(document.getElementById("detail"));
   // callback นี้ถูกเรียกตอนผู้ใช้เลือกแถว ซึ่งเกิดหลังสร้าง follower (บรรทัดถัดไป) เสร็จแล้วเสมอ
   const timeline = new TimelineView(
@@ -846,8 +995,12 @@ function main() {
     (exchange, interaction, byUser) => {
       if (byUser) follower.stop(); // ผู้สอนเลือกเอง: โปรแกรมไม่แย่ง
       detail.show(exchange, interaction);
+      if (exchange === null) stacked.back(); // ไม่มีอะไรให้ดูแล้ว (เช่นหลังล้าง)
+      else if (byUser) stacked.openDetail(); // โปรแกรมเลือกให้ (ตามคลิก) ไม่แย่งหน้า Timeline บนจอแคบ
     },
   );
+  const stacked = new StackedLayout(document.querySelector(".layout"), document.getElementById("detail-back"), timeline);
+  const newItems = new NewItemsNotice(document.querySelector(".timeline"), document.getElementById("new-items"));
   const follower = new ClickFollower(timeline, document.getElementById("follow-clicks"));
   const status = new StatusView(document.getElementById("chrome-status"));
   const chromeHelp = new ChromeHelpView(
@@ -882,11 +1035,13 @@ function main() {
   const handlers = {
     snapshot: (data) => {
       timeline.reset(data.interactions, data.exchanges);
+      newItems.reset();
       follower.onSnapshot();
       showStatus(data.status);
     },
     "interaction.new": (data) => {
       timeline.upsertInteraction(data);
+      newItems.onNewInteraction();
       follower.onNewInteraction(data);
     },
     "interaction.update": (data) => timeline.upsertInteraction(data),
@@ -896,6 +1051,7 @@ function main() {
     cleared: () => {
       follower.stop();
       timeline.reset([], []);
+      newItems.reset();
     },
   };
 

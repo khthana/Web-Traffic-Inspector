@@ -28,33 +28,6 @@
   --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14171c;
-    --surface: #1d2129;
-    --fg: #e8ebf0;
-    --muted: #a3abb8;
-    --line: #333a45;
-    --ok: #4cc26a;
-    --warn: #f0a33a;
-    --warn-bg: #3a2c10;
-    --highlight: #1d3352;
-    --bad: #ff7a70;
-    --neutral: #9aa3b0;
-    --get: #5aa9ff;
-    --post: #4cc26a;
-    --put: #f0a33a;
-    --delete: #ff7a70;
-    --badge-fg: #111418;
-    --other-method: #c9a4ff;
-    --json-key: #c9a4ff;
-    --json-string: #4cc26a;
-    --json-number: #5aa9ff;
-    --json-boolean: #f0a33a;
-    --json-null: #a3abb8;
-  }
-}
-
 :root[data-theme="dark"] {
   --bg: #14171c;
   --surface: #1d2129;
@@ -83,6 +56,7 @@
 * { box-sizing: border-box; }
 
 html, body { height: 100%; }
+html { font-size: var(--font-size); }  /* A−/A+ เปลี่ยนค่านี้ทั้งหน้า (rem ทุกตัวขยายตาม) */
 
 body {
   margin: 0;
@@ -90,16 +64,17 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--fg);
-  font: var(--font-size)/1.5 var(--font);
+  font: 1rem/1.5 var(--font);
 }
 
 .topbar {
-  height: 56px;
+  min-height: 56px;
   flex: none;
   display: flex;
+  flex-wrap: wrap;  /* ตัวใหญ่บนจอเล็ก: ปุ่มขึ้นบรรทัดใหม่แทนการล้นออกนอกจอ */
   align-items: center;
-  gap: 1.5rem;
-  padding: 0 16px;
+  gap: .4rem 1.5rem;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -107,7 +82,11 @@ body {
 
 .chrome-status { display: flex; align-items: center; gap: .5rem; }
 
-.toolbar { display: flex; align-items: center; gap: .6rem; margin-left: auto; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-left: auto; }
+.font-size { display: inline-flex; }
+.font-size .tool-button:first-child { border-radius: 6px 0 0 6px; }
+.font-size .tool-button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.tool-button:disabled { opacity: .45; cursor: default; }
 .toolbar select, .tool-button, .custom-filters button, .custom-filters input {
   font: inherit;
   padding: .3rem .7rem;
@@ -150,6 +129,8 @@ body {
 .chrome-status[data-state="connected"][data-paused="true"] .dot { background: var(--warn); }
 
 .banner { padding: .4rem 16px; background: var(--surface); color: var(--muted); border-bottom: 1px solid var(--line); }
+.banner-ethics { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--fg); }
+.banner-ethics[hidden] { display: none; }
 .banner-warn { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
 
 .chrome-setup { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; background: var(--surface); }
@@ -180,6 +161,7 @@ body {
 .layout { flex: 1; min-height: 0; display: flex; }
 
 .timeline {
+  position: relative;
   width: 40%;
   min-width: 360px;
   overflow-y: auto;
@@ -193,6 +175,22 @@ body {
 .column-title { font-size: .8rem; letter-spacing: .05em; color: var(--muted); margin: 0 0 .5rem; }
 
 .empty { color: var(--muted); }
+
+/* ปุ่มลอย "มี N รายการใหม่ ↑": ติดขอบบนของ Timeline ขณะผู้ใช้เลื่อนลงไปดูของเก่า (สูง 0 จึงไม่ดันเนื้อหา) */
+.new-items-dock { position: sticky; top: 0; height: 0; z-index: 2; display: flex; justify-content: center; overflow: visible; }
+.new-items {
+  font: inherit;
+  font-weight: 600;
+  padding: .3rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--get);
+  color: var(--badge-fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+  cursor: pointer;
+}
+
+.detail-back { display: none; align-self: flex-start; margin: 8px 16px 0; }
 
 .exchange-list { list-style: none; margin: 0; padding: 0; }
 
@@ -370,8 +368,13 @@ body {
 .tool-check { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; cursor: pointer; }
 .tool-check input { width: 1.1em; height: 1.1em; }
 
+/* จอแคบ: Timeline และ Detail ซ้อนกัน เลือก Exchange แล้ว Detail เปิดเต็มจอ มีปุ่มย้อนกลับ */
 @media (max-width: 900px) {
   .layout { flex-direction: column; }
   .overview { grid-template-columns: 1fr; }
-  .timeline { width: auto; min-width: 0; border-right: none; }
+  .timeline { flex: 1; width: auto; min-width: 0; border-right: none; }
+  .layout:not(.detail-open) .detail { display: none; }
+  .layout.detail-open .timeline { display: none; }
+  .layout.detail-open .detail-back { display: inline-block; }
+  .shortcuts { display: none; }
 }
