@@ -17,12 +17,12 @@ from playwright.async_api import Error as PlaywrightError
 
 from inspector.capture_events import (
     CaptureEvent,
-    NavigationOccurred,
     RequestFailed,
     RequestStarted,
     ResponseReceived,
     TabChanged,
 )
+from inspector.click_tracker import ClickTracker
 from inspector.http_parts import header
 
 MAX_BODY_BYTES = 64 * 1024
@@ -102,6 +102,7 @@ class TrafficCapture:
     """ฟัง request/response ของทุก Watched tab ใน context แล้วส่ง Capture event ให้ `sink`
 
     สอนแนวคิด: dependency injection — class นี้ไม่รู้ว่าใครรับ event ต่อ รู้แค่ว่าต้องเรียก `sink`
+    และ composition — มี ClickTracker อยู่ข้างในเพื่อดักคลิกของแท็บเดียวกัน
     """
 
     def __init__(self, sink: EventSink, inspector_origins: tuple[str, ...]) -> None:
@@ -111,6 +112,7 @@ class TrafficCapture:
         self._started: dict[Request, asyncio.Task[str]] = {}
         self._next_tab = 0
         self._next_request = 0
+        self._clicks = ClickTracker(sink, inspector_origins, tab_of=self.watched_tab_id)
 
     async def attach(self, context: BrowserContext) -> None:
         """เริ่มฟัง context นี้ รวมถึงแท็บที่จะเปิดใหม่ภายหลัง"""
@@ -124,9 +126,17 @@ class TrafficCapture:
         context.on("requestfailed", self._on_failed)
         for page in context.pages:
             self._track_page(page)
+        await self._clicks.attach(context)
+
+    def watched_tab_id(self, page: Page) -> str | None:
+        """tab_id ของแท็บนี้ ถ้าตอนนี้ไม่ใช่ Watched tab คืน None"""
+        self._track_page(page)  # หน้าในแท็บใหม่อาจส่งคลิกมาก่อน event "page" ของ Playwright
+        return self._tab_ids[page] if is_watchable(page.url, self._origins) else None
 
     def _track_page(self, page: Page) -> None:
         """จำทุกแท็บไว้ (แม้ยังไม่ใช่ Watched tab) เพราะแท็บอาจ navigate มาเป็น Watched tab ทีหลัง"""
+        if page in self._tab_ids or page.is_closed():
+            return
         self._next_tab += 1
         self._tab_ids[page] = f"tab-{self._next_tab}"
         self._announce_tab(page)
@@ -138,11 +148,9 @@ class TrafficCapture:
         self._sink(TabChanged(tab_id=tab_id, url=page.url, ts=now_ms(), open=is_watchable(page.url, self._origins)))
 
     def _on_navigated(self, page: Page) -> None:
-        if page not in self._tab_ids:
-            return
-        self._announce_tab(page)
-        if is_watchable(page.url, self._origins):
-            self._sink(NavigationOccurred(tab_id=self._tab_ids[page], url=page.url, ts=now_ms()))
+        """อัปเดต URL ของแท็บ (Navigation จริงส่งมาจาก ClickTracker เพราะ event นี้นับ pushState ด้วย)"""
+        if page in self._tab_ids:
+            self._announce_tab(page)
 
     def _on_closed(self, page: Page) -> None:
         tab_id = self._tab_ids.pop(page, None)

@@ -6,6 +6,7 @@ from typing import Any
 
 import anyio
 import pytest
+from chrome_support import ChromeProcess, find_chrome
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
@@ -68,3 +69,14 @@ def harness() -> Iterator[Harness]:
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)
+
+
+@pytest.fixture
+def chrome() -> Iterator[ChromeProcess]:
+    """Chrome แบบ headless ของจริง (เฉพาะ test ที่ mark `chrome`) ถ้าไม่มี Chrome ในเครื่องจะข้าม test"""
+    executable = find_chrome()
+    if executable is None:
+        pytest.skip("ไม่พบ Chrome ในเครื่องนี้")
+    process = ChromeProcess(executable)
+    yield process
+    process.cleanup()
