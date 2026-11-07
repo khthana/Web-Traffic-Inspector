@@ -131,6 +131,7 @@ def test_history_and_status_are_available_over_rest(harness: Harness) -> None:
     assert [e["id"] for e in history["exchanges"]] == ["ex_0001"]
     assert status.pop("chrome_launch_command")  # ทดสอบละเอียดใน test_chrome_status.py
     assert status.pop("correlation_window_ms") == 1500
+    assert status.pop("preset") == "all"  # ทดสอบละเอียดใน test_filtering.py
     assert status == {
         "chrome": "disconnected",
         "paused": False,

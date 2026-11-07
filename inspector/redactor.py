@@ -43,7 +43,21 @@ class Redactor:
 
     สอนแนวคิด: single responsibility — class นี้มีหน้าที่เดียวคือ "ทำให้ข้อมูลปลอดภัย"
     ทุกเมธอดรับค่าเดิมแล้วคืนค่าใหม่ ไม่แก้ของเดิม จึงทดสอบง่าย
+    และ immutable object — เพิ่ม key ที่ต้องซ่อนได้ด้วย `with_extra_keys` ซึ่งคืน Redactor ตัวใหม่
+    รายการพื้นฐานจึงลดไม่ได้
     """
+
+    def __init__(self, extra_keys: tuple[str, ...] = ()) -> None:
+        self.extra_keys = tuple(key for key in extra_keys if key.strip())
+        pattern = "|".join(re.escape(key.strip()) for key in self.extra_keys)
+        self._extra = re.compile(pattern, re.I) if pattern else None
+
+    def with_extra_keys(self, keys: list[str] | tuple[str, ...]) -> "Redactor":
+        """Redactor ตัวใหม่ที่ซ่อน key เพิ่มจาก Preset (ไม่แตะ Exchange ที่เก็บไปแล้ว)"""
+        return Redactor(tuple(dict.fromkeys([*self.extra_keys, *keys])))
+
+    def is_sensitive_key(self, key: str) -> bool:
+        return is_sensitive_key(key) or (self._extra is not None and self._extra.search(key) is not None)
 
     def headers(self, headers: dict[str, str]) -> dict[str, str]:
         """ซ่อนค่าของ header ที่อ่อนไหว (cookie เหลือชื่อไว้ header ที่เป็น URL ซ่อนเฉพาะ query)"""
@@ -62,7 +76,7 @@ class Redactor:
 
     def query(self, query: dict[str, list[str]]) -> dict[str, list[str]]:
         """ซ่อนค่าใน query ที่แยกเป็น dict แล้ว"""
-        return {key: [REDACTED] * len(values) if is_sensitive_key(key) else values for key, values in query.items()}
+        return {key: [REDACTED] * len(values) if self.is_sensitive_key(key) else values for key, values in query.items()}
 
     def body(self, body: str | None, kind: BodyKind) -> RedactedBody:
         """ซ่อนค่าใน body ตามชนิดของมัน"""
@@ -92,7 +106,7 @@ class Redactor:
             return "\n".join(self._set_cookie(line) for line in value.split("\n"))
         if lowered in URL_HEADER_NAMES:
             return self.url(value)
-        if is_sensitive_header(name):
+        if is_sensitive_header(name) or self.is_sensitive_key(name):
             return f"{REDACTED} (ซ่อนไว้, {len(value)} ตัวอักษร)"
         return value
 
@@ -111,27 +125,26 @@ class Redactor:
             return f"{route}?{self._pairs(query)}"
         return self._pairs(fragment)
 
-    @staticmethod
-    def _pairs(text: str) -> str:
+    def _pairs(self, text: str) -> str:
         """ซ่อนค่าใน `a=1&b=2` (query หรือ form) โดยคง encoding เดิมของส่วนที่ไม่ได้ซ่อน"""
         pieces = []
         for piece in text.split("&"):
             raw_key, has_value, _ = piece.partition("=")
-            if has_value and is_sensitive_key(unquote_plus(raw_key)):
+            if has_value and self.is_sensitive_key(unquote_plus(raw_key)):
                 piece = f"{raw_key}={REDACTED}"
             pieces.append(piece)
         return "&".join(pieces)
 
     def _json(self, value: Any) -> Any:
         if isinstance(value, dict):
-            return {k: REDACTED if is_sensitive_key(k) else self._json(v) for k, v in value.items()}
+            return {k: REDACTED if self.is_sensitive_key(k) else self._json(v) for k, v in value.items()}
         if isinstance(value, list):
             return [self._json(item) for item in value]
         return value
 
     def _has_sensitive_key(self, value: Any) -> bool:
         if isinstance(value, dict):
-            return any(is_sensitive_key(k) or self._has_sensitive_key(v) for k, v in value.items())
+            return any(self.is_sensitive_key(k) or self._has_sensitive_key(v) for k, v in value.items())
         if isinstance(value, list):
             return any(self._has_sensitive_key(item) for item in value)
         return False

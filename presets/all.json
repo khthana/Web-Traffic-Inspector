@@ -1,0 +1,9 @@
+{
+  "label": "ทุกเว็บ",
+  "focus_hosts": [],
+  "focus_path_prefixes": [],
+  "focus_resource_types": [],
+  "block_hosts": [],
+  "block_path_prefixes": [],
+  "redact_keys": []
+}

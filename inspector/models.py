@@ -106,9 +106,54 @@ class InspectorStatus(BaseModel):
 
     chrome: Literal["connected", "disconnected"] = "disconnected"
     paused: bool = False
-    hidden_count: int = 0
+    hidden_count: int = 0  # Hidden exchange ทั้งหมดตั้งแต่ Clear (รวมตัวที่หลุดจาก buffer แล้ว)
+    preset: str = "all"
     tabs: list[TabInfo] = []
     chrome_launch_command: str = ""  # คำสั่งเปิด Chrome โหมด debug ตาม OS ของเครื่องนี้
     correlation_window_ms: float = 1500  # UI ใช้รอก่อนบอกว่าคลิกนี้ "ไม่มี API call"
     mode: Literal["live", "playback"] = "live"
     recording_file: str | None = None
+
+
+class FilterRules(BaseModel):
+    """กฎการกรองของ Preset หนึ่งชุด (Blocklist พื้นฐานไม่อยู่ในนี้ เพราะถอดออกไม่ได้)
+
+    host เขียนแบบ `example.com` (นับ subdomain ด้วย) หรือ `*.run.app`
+    """
+
+    focus_hosts: list[str] = []  # Focus rule: แสดงเฉพาะ host เหล่านี้
+    focus_path_prefixes: list[str] = []  # Focus rule: แสดงเฉพาะ path ที่ขึ้นต้นแบบนี้
+    focus_resource_types: list[Literal["fetch", "xhr"]] = []
+    block_hosts: list[str] = []  # Blocklist เพิ่มเติม
+    block_path_prefixes: list[str] = []
+    redact_keys: list[str] = []  # key ที่ต้องซ่อนค่าเพิ่ม (เพิ่มได้อย่างเดียว)
+
+
+class Preset(FilterRules):
+    """ชุดกฎการกรองที่มีชื่อ เช่น `all`, `advice` หรือ `custom` (อยู่ในหน่วยความจำเท่านั้น)"""
+
+    name: str
+    label: str
+
+
+class PresetChoice(BaseModel):
+    """ตัวเลือกหนึ่งตัวใน dropdown"""
+
+    name: str
+    label: str
+
+
+class FilterView(BaseModel):
+    """คำตอบของ `GET /api/filters`"""
+
+    selected: str
+    choices: list[PresetChoice]
+    rules: FilterRules
+    base_blocklist: list[str]
+
+
+class FilterUpdate(BaseModel):
+    """body ของ `PUT /api/filters`: เลือก Preset และ (เฉพาะ `custom`) แก้กฎ"""
+
+    selected: str
+    rules: FilterRules | None = None

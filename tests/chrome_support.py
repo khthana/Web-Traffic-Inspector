@@ -24,6 +24,7 @@ from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector
 from inspector.correlator import Correlator
+from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -111,7 +112,11 @@ class LiveInspector:
 
     def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
         self.pipeline = InspectorPipeline(
-            store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor(), correlator=Correlator(window_ms=1500)
+            store=EventStore(),
+            broadcaster=Broadcaster(),
+            redactor=Redactor(),
+            correlator=Correlator(window_ms=1500),
+            filters=FilterSettings(load_presets(PRESETS_DIR)),
         )
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(

@@ -16,14 +16,24 @@ from inspector.capture_events import (
     TabChanged,
 )
 from inspector.correlator import Correlation, Correlator
+from inspector.filters import FilterSettings
 from inspector.http_parts import body_kind, split_url
-from inspector.models import ClickEvent, HttpExchange, HttpRequest, HttpResponse, InspectorStatus, TabInfo
+from inspector.models import (
+    ClickEvent,
+    FilterUpdate,
+    FilterView,
+    HttpExchange,
+    HttpRequest,
+    HttpResponse,
+    InspectorStatus,
+    TabInfo,
+)
 from inspector.redactor import Redactor
 from inspector.store import EventStore
 
 
 class InspectorPipeline:
-    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → correlate → store → broadcast"""
+    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → store → broadcast"""
 
     def __init__(
         self,
@@ -31,10 +41,14 @@ class InspectorPipeline:
         broadcaster: Broadcaster,
         redactor: Redactor,
         correlator: Correlator,
+        filters: FilterSettings,
         chrome_launch_command: str = "",
     ) -> None:
         self._store = store
-        self._redactor = redactor
+        self._filters = filters
+        self._chain = filters.chain()
+        # key ที่ Preset เพิ่มมาสะสมไว้ตลอด (เปลี่ยน Preset แล้วก็ไม่ลด): ซ่อนเกินได้ แต่ห้ามซ่อนขาด
+        self._redactor = redactor.with_extra_keys(filters.current.redact_keys)
         self._correlator = correlator
         self._broadcaster = broadcaster
         self._next_id = 0
@@ -42,7 +56,9 @@ class InspectorPipeline:
         self._pending: dict[str, str] = {}  # request_key → exchange id
         self._tabs: dict[str, TabInfo] = {}
         self.status = InspectorStatus(
-            chrome_launch_command=chrome_launch_command, correlation_window_ms=correlator.window_ms
+            chrome_launch_command=chrome_launch_command,
+            correlation_window_ms=correlator.window_ms,
+            preset=filters.current.name,
         )
 
     def handle(self, event: CaptureEvent) -> None:
@@ -69,6 +85,29 @@ class InspectorPipeline:
                 if exchange is not None:
                     self._finish(exchange.model_copy(update={"state": "failed", "failure": "Chrome หลุดก่อนได้คำตอบ"}))
         self._publish_status(chrome="connected" if connected else "disconnected")
+
+    def filter_view(self) -> FilterView:
+        return self._filters.view()
+
+    def change_filters(self, update: FilterUpdate) -> FilterView:
+        """เลือก Preset (หรือแก้ `custom`) แล้วคำนวณการซ่อนของทุก Exchange ใหม่ และส่ง snapshot ให้ทุก client
+
+        ชื่อไม่รู้จัก หรือส่งกฎมากับ Preset ที่ไม่ใช่ `custom` → ValueError (ไม่เปลี่ยนอะไร)
+        """
+        if update.rules is not None and update.selected != "custom":
+            raise ValueError("แก้กฎได้เฉพาะ preset custom (Preset จากไฟล์แก้จากหน้าเว็บไม่ได้)")
+        if update.rules is None:
+            self._filters.select(update.selected)
+        else:
+            self._filters.edit_custom(update.rules)
+        self._chain = self._filters.chain()
+        self._redactor = self._redactor.with_extra_keys(self._filters.current.redact_keys)
+        self._store.refilter(self._chain.hidden_reason)
+        self.status = self.status.model_copy(
+            update={"preset": self._filters.current.name, "hidden_count": self._store.hidden_count}
+        )
+        self._broadcaster.publish("snapshot", self.snapshot())
+        return self._filters.view()
 
     def snapshot(self) -> dict[str, Any]:
         """ข้อมูลทั้งหมดที่ client ใหม่ต้องรู้"""
@@ -114,9 +153,13 @@ class InspectorPipeline:
                 or request.body != event.post_data
             ),
         )
+        reason = self._chain.hidden_reason(exchange)
+        exchange = exchange.model_copy(update={"hidden": reason is not None, "hidden_reason": reason})
         self._pending[event.request_key] = exchange.id
         self._store.add_exchange(exchange)
         self._broadcaster.publish("exchange.new", exchange.model_dump())
+        if exchange.hidden:
+            self._publish_status(hidden_count=self._store.hidden_count)
 
     def _on_response(self, event: ResponseReceived) -> None:
         exchange = self._take_pending(event.request_key)

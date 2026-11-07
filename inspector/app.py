@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from inspector.broadcaster import Broadcaster
-from inspector.models import HttpExchange, InspectorStatus
+from inspector.models import FilterUpdate, FilterView, HttpExchange, InspectorStatus
 from inspector.pipeline import InspectorPipeline
 from inspector.store import EventStore
 
@@ -45,6 +45,19 @@ def create_app(pipeline: InspectorPipeline, store: EventStore, broadcaster: Broa
         if exchange is None:
             raise HTTPException(status_code=404, detail="ไม่พบ Exchange นี้ (อาจถูกล้างไปแล้ว)")
         return exchange
+
+    @app.get("/api/filters")
+    def get_filters() -> FilterView:
+        """Preset ที่เลือกได้ ตัวที่เลือกอยู่ กฎของมัน และ Blocklist พื้นฐาน (ถอดออกไม่ได้)"""
+        return pipeline.filter_view()
+
+    @app.put("/api/filters")
+    def put_filters(update: FilterUpdate) -> FilterView:
+        """เลือก Preset หรือแก้กฎของ `custom` (อยู่ในหน่วยความจำเท่านั้น key ที่ต้องซ่อนเพิ่มได้อย่างเดียว)"""
+        try:
+            return pipeline.change_filters(update)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.websocket("/ws")
     async def websocket(ws: WebSocket) -> None:

@@ -39,6 +39,7 @@ class DemoScript:
             await self.navigate(f"{SITE}/")
             await self.call("GET", "get-category", 200, {"categories": ["notebooks", "monitors"]})
             await self.call("POST", "cart/get", 200, {"status": "SUCCESS", "data": []})
+            await self.call("POST", "collect", 204, {}, url="https://region1.google-analytics.com/g/collect")
             await asyncio.sleep(3)
 
             await self.click("button", "ใส่ตะกร้า")
@@ -47,6 +48,7 @@ class DemoScript:
             await asyncio.sleep(3)
 
             await self.click("button", "ดูรูปถัดไป")  # ทำงานในเบราว์เซอร์อย่างเดียว ไม่มี API call
+            await self.call("POST", "collect", 204, {}, url="https://www.clarity.ms/collect")  # แต่ยังถูก track
             await asyncio.sleep(5)
 
             await self.call("GET", "notification/count", 200, {"unread": 0})  # polling เบื้องหลัง
@@ -68,7 +70,7 @@ class DemoScript:
         self._page = url
         self._pipeline.handle(NavigationOccurred(tab_id=TAB, url=url, ts=now_ms()))
 
-    async def call(self, method: str, name: str, status: int, body: dict[str, Any]) -> None:
+    async def call(self, method: str, name: str, status: int, body: dict[str, Any], url: str | None = None) -> None:
         key = f"demo-{next(self._keys)}"
         self._pipeline.handle(
             RequestStarted(
@@ -77,7 +79,7 @@ class DemoScript:
                 page_url=self._page,
                 ts=now_ms(),
                 method=method,
-                url=f"{API}/{name}",
+                url=url or f"{API}/{name}",
                 resource_type="fetch",
                 headers={"content-type": "application/json", "cookie": "PHPSESSID=demo-session-value"},
                 post_data='{"page": 1}' if method == "POST" else None,

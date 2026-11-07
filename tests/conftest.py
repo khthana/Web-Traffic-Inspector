@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import anyio
@@ -15,6 +16,7 @@ from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
 from inspector.chrome import chrome_launch_command
 from inspector.correlator import Correlator
+from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -55,20 +57,28 @@ class Harness:
         return response.json()
 
 
-@pytest.fixture
-def harness() -> Iterator[Harness]:
-    store = EventStore(max_exchanges=500)
+@contextmanager
+def build_harness(max_exchanges: int = 500, preset: str = "all") -> Iterator[Harness]:
+    """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges` และ `--preset`)"""
+    store = EventStore(max_exchanges=max_exchanges)
     broadcaster = Broadcaster()
     pipeline = InspectorPipeline(
         store=store,
         broadcaster=broadcaster,
         redactor=Redactor(),
         correlator=Correlator(window_ms=1500),
+        filters=FilterSettings(load_presets(PRESETS_DIR), selected=preset),
         chrome_launch_command=chrome_launch_command("http://127.0.0.1:9222"),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)
+
+
+@pytest.fixture
+def harness() -> Iterator[Harness]:
+    with build_harness() as built:
+        yield built
 
 
 @pytest.fixture

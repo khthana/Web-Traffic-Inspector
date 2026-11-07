@@ -16,6 +16,7 @@ from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector, chrome_launch_command
 from inspector.correlator import Correlator
 from inspector.demo import feed_demo_events
+from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -34,11 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cdp-url", default="http://127.0.0.1:9222", help="ที่อยู่ CDP ของ Chrome (ค่าเริ่มต้น http://127.0.0.1:9222)"
     )
+    parser.add_argument("--preset", default="all", help="Preset การกรองตอนเริ่ม เช่น all หรือ advice (ไฟล์ใน presets/)")
     parser.add_argument("--demo", action="store_true", help="ป้อนข้อมูลตัวอย่างแทน Chrome (ใช้ลอง UI)")
     return parser.parse_args()
 
 
-async def run(args: argparse.Namespace) -> None:
+async def run(args: argparse.Namespace, filters: FilterSettings) -> None:
     store = EventStore(max_exchanges=args.max_exchanges)
     broadcaster = Broadcaster()
     pipeline = InspectorPipeline(
@@ -46,6 +48,7 @@ async def run(args: argparse.Namespace) -> None:
         broadcaster=broadcaster,
         redactor=Redactor(),
         correlator=Correlator(window_ms=args.window_ms),
+        filters=filters,
         chrome_launch_command="" if args.demo else chrome_launch_command(args.cdp_url),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
@@ -73,8 +76,13 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    args = parse_args()
     try:
-        asyncio.run(run(parse_args()))
+        filters = FilterSettings(load_presets(PRESETS_DIR), selected=args.preset)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    try:
+        asyncio.run(run(args, filters))
     except KeyboardInterrupt:
         pass
 

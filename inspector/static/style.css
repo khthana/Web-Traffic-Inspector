@@ -88,6 +88,45 @@ body {
 .app-name { font-size: 1.15rem; margin: 0; }
 
 .chrome-status { display: flex; align-items: center; gap: .5rem; }
+
+.toolbar { display: flex; align-items: center; gap: .6rem; margin-left: auto; }
+.toolbar select, .tool-button, .custom-filters button, .custom-filters input {
+  font: inherit;
+  padding: .3rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.tool-button { cursor: pointer; white-space: nowrap; }
+.tool-button[aria-pressed="true"] { background: var(--surface); border-color: var(--muted); font-weight: 600; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.custom-filters { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.custom-filters h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.custom-filters .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem .8rem; }
+.custom-filters label { display: flex; flex-direction: column; gap: .2rem; font-size: .9em; color: var(--muted); }
+.custom-filters button { cursor: pointer; }
+.custom-filters .hint { color: var(--muted); font-size: .85em; font-weight: 400; }
+.form-error { color: var(--bad); font-weight: 600; }
+
+/* Hidden exchange: ซ่อนไว้จนกว่าจะเปิดปุ่ม "ซ่อน N รายการ" แล้วแสดงแบบจาง */
+.exchange.is-hidden { display: none; }
+.show-hidden .exchange.is-hidden { display: grid; opacity: .55; }
+.card.no-visible:not(.kind-click) { display: none; }
+.show-hidden .card.no-visible:not(.kind-click) { display: block; opacity: .7; }
+.hidden-reason {
+  grid-column: 2 / -1;  /* บรรทัดใหม่ใต้ path จะได้ไม่เบียด path */
+  justify-self: start;
+  font-size: .8em;
+  padding: .05rem .45rem;
+  border-radius: 999px;
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hidden-note { display: block; color: var(--muted); font-size: .85em; }
+.hidden-note:empty { display: none; }
 .chrome-status .dot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--bad); }
 .chrome-status[data-state="connected"] .dot { background: var(--ok); }
 
@@ -154,8 +193,9 @@ body {
 .card-meta { color: var(--muted); font-size: .85em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .no-calls { display: none; color: var(--muted); font-size: .9em; padding: 4px 0 6px; }
-/* โผล่หลังครบ Correlation window (JS ตั้งค่าจาก status) จะได้ไม่กะพริบก่อน Exchange มาถึง */
-.card.is-empty .no-calls { display: block; animation: appear-later var(--correlation-window, 1.5s) step-end; }
+.card.no-visible .no-calls { display: block; }
+/* การ์ดที่เพิ่งเกิด: รอให้ครบ Correlation window (JS ตั้งค่าจาก status) จะได้ไม่กะพริบก่อน Exchange มาถึง */
+.card.is-new.no-visible .no-calls { animation: appear-later var(--correlation-window, 1.5s) step-end; }
 @keyframes appear-later { from { visibility: hidden; } to { visibility: visible; } }
 
 .exchange {

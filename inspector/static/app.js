@@ -51,7 +51,8 @@ class TimelineView {
     const existing = this.cards.get(interaction.id);
     if (existing) {
       existing.querySelector(".card-head").replaceWith(cardHead(interaction));
-      if (interaction.exchange_ids.length > 0) existing.classList.remove("is-empty");
+      existing.dataset.total = String(interaction.exchange_ids.length);
+      refreshCard(existing);
       return;
     }
     const card = renderCard(interaction);
@@ -70,9 +71,9 @@ class TimelineView {
       existing.replaceWith(row);
     } else {
       card.querySelector(".exchange-list").append(row);
-      card.classList.remove("is-empty");
     }
     this.rows.set(exchange.id, row);
+    refreshCard(card);
   }
 
   updateEmpty() {
@@ -90,16 +91,31 @@ const KIND_ICONS = {
 function renderCard(interaction) {
   const card = document.createElement("li");
   card.className = `card kind-${interaction.kind}`;
-  // ดูจาก exchange_ids ไม่ใช่จากแถวที่วาดอยู่ เพราะ Exchange เก่าอาจถูกตัดออกจาก store ไปแล้ว
-  card.classList.toggle("is-empty", interaction.exchange_ids.length === 0);
   card.dataset.id = interaction.id;
+  card.dataset.total = String(interaction.exchange_ids.length);
   const rows = document.createElement("ol");
   rows.className = "exchange-list";
   card.append(cardHead(interaction), rows);
   if (interaction.kind === "click") {
-    card.append(textSpan("no-calls", "ไม่มี API call — ปุ่มนี้ทำงานในเบราว์เซอร์อย่างเดียว"));
+    card.append(
+      textSpan("no-calls", "ไม่มี API call — ปุ่มนี้ทำงานในเบราว์เซอร์อย่างเดียว"),
+      textSpan("hidden-note", ""),
+    );
   }
+  refreshCard(card);
   return card;
+}
+
+/** การ์ดที่ไม่มี Exchange ที่มองเห็นได้ class "no-visible": การ์ดคลิกบอกว่าไม่มี API call
+ *  ส่วนการ์ดโหลดหน้า/เบื้องหลังถูกซ่อนไปเลย (ยกเว้นตอนเปิดปุ่ม "ซ่อน N รายการ") */
+function refreshCard(card) {
+  const drawn = card.querySelectorAll(".exchange").length;
+  const hidden = card.querySelectorAll(".exchange.is-hidden").length;
+  // Exchange ที่อยู่ใน exchange_ids แต่ไม่มีแถว คือถูกตัดออกจาก store ไปแล้ว: ไม่รู้สถานะ จึงนับเป็นมองเห็น
+  const dropped = Math.max(Number(card.dataset.total) - drawn, 0);
+  card.classList.toggle("no-visible", drawn - hidden + dropped === 0);
+  const note = card.querySelector(".hidden-note");
+  if (note) note.textContent = hidden > 0 ? `(มี tracking ${hidden} รายการที่ซ่อนอยู่)` : "";
 }
 
 function cardHead(interaction) {
@@ -128,7 +144,7 @@ function cardTitle(interaction) {
 
 function renderExchangeRow(exchange) {
   const li = document.createElement("li");
-  li.className = "exchange";
+  li.className = exchange.hidden ? "exchange is-hidden" : "exchange";
   li.dataset.id = exchange.id;
   li.append(
     badge(exchange.request.method, `method-${exchange.request.method}`),
@@ -138,6 +154,7 @@ function renderExchangeRow(exchange) {
     statusBadge(exchange),
     textSpan("ms", exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`),
   );
+  if (exchange.hidden_reason) li.append(textSpan("hidden-reason", exchange.hidden_reason));
   return li;
 }
 
@@ -255,6 +272,88 @@ function textSpan(className, text, title) {
   return span;
 }
 
+/** ปุ่ม "ซ่อน N รายการ": toggle แสดง Hidden exchange แบบจางพร้อม Hidden reason
+ *  สอนแนวคิด: single responsibility — รู้แค่เรื่องปุ่มนี้ ส่วนการแสดงผลจริงให้ CSS จัดการจาก class บน body */
+class HiddenToggle {
+  constructor(button) {
+    this.button = button;
+    button.addEventListener("click", () => {
+      const showing = document.body.classList.toggle("show-hidden");
+      button.setAttribute("aria-pressed", String(showing));
+    });
+  }
+
+  show(status) {
+    this.button.textContent = `ซ่อน ${status.hidden_count} รายการ`;
+  }
+}
+
+const LIST_FIELDS = ["focus_hosts", "focus_path_prefixes", "block_hosts", "block_path_prefixes", "redact_keys"];
+
+/** dropdown เลือก Preset และฟอร์มแก้กฎของ "กำหนดเอง…" คุยกับ GET/PUT /api/filters
+ *  สอนแนวคิด: encapsulation — เก็บสถานะล่าสุดจาก server ไว้ใน this.view ที่เดียว */
+class FilterControls {
+  constructor(select, form) {
+    this.select = select;
+    this.form = form;
+    this.view = null;
+    select.addEventListener("change", () => this.choose(select.value));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.saveCustom();
+    });
+    form.querySelector("#custom-close").addEventListener("click", () => { form.hidden = true; });
+  }
+
+  async load() {
+    this.render(await (await fetch("/api/filters")).json());
+  }
+
+  /** client อื่นเปลี่ยน Preset: status บอกชื่อใหม่ จึงโหลดกฎมาใหม่ */
+  show(status) {
+    if (this.view && status.preset !== this.view.selected) this.load();
+  }
+
+  async choose(name) {
+    if (await this.put({ selected: name })) this.form.hidden = name !== "custom";
+  }
+
+  async saveCustom() {
+    const rules = { ...this.view.rules };
+    for (const field of LIST_FIELDS) {
+      rules[field] = this.form.elements[field].value.split(",").map((value) => value.trim()).filter(Boolean);
+    }
+    await this.put({ selected: "custom", rules });
+  }
+
+  async put(body) {
+    const error = this.form.querySelector("#custom-error");
+    const response = await fetch("/api/filters", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    error.hidden = response.ok;
+    if (!response.ok) {
+      error.textContent = typeof data.detail === "string" ? data.detail : "กฎไม่ถูกต้อง ลองตรวจอีกครั้ง";
+      this.form.hidden = false;
+      this.select.value = this.view.selected;
+      return false;
+    }
+    this.render(data);
+    return true;
+  }
+
+  render(view) {
+    this.view = view;
+    this.select.replaceChildren(...view.choices.map((choice) => new Option(choice.label, choice.name)));
+    this.select.value = view.selected;
+    for (const field of LIST_FIELDS) this.form.elements[field].value = view.rules[field].join(", ");
+    this.form.querySelector("#base-blocklist").textContent = view.base_blocklist.join(", ");
+  }
+}
+
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
   const timeline = new TimelineView(
@@ -266,10 +365,15 @@ function main() {
     document.getElementById("chrome-setup"),
     document.getElementById("chrome-banner"),
   );
+  const hiddenToggle = new HiddenToggle(document.getElementById("hidden-toggle"));
+  const filters = new FilterControls(document.getElementById("preset"), document.getElementById("custom-filters"));
+  filters.load();
   const banner = document.getElementById("socket-banner");
   const showStatus = (data) => {
     status.show(data);
     chromeHelp.show(data);
+    hiddenToggle.show(data);
+    filters.show(data);
     // CSS ใช้ค่านี้รอให้ครบ Correlation window ก่อนบอกว่าคลิกนี้ "ไม่มี API call"
     document.documentElement.style.setProperty("--correlation-window", `${data.correlation_window_ms}ms`);
   };
