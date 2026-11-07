@@ -73,6 +73,7 @@ class HttpExchange(BaseModel):
     failure: str | None = None
     request: HttpRequest
     response: HttpResponse | None = None
+    has_redactions: bool = False  # True = มีค่าลับอย่างน้อยหนึ่งจุดถูกซ่อนไว้
     hidden: bool = False
     hidden_reason: str | None = None
     summary: str = ""

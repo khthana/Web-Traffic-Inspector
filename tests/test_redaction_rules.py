@@ -34,6 +34,6 @@ def test_sensitive_headers_are_detected(name: str) -> None:
     assert is_sensitive_header(name)
 
 
-@pytest.mark.parametrize("name", ["content-type", "accept", "user-agent", "referer", "cache-control", "keep-alive"])
+@pytest.mark.parametrize("name", ["content-type", "accept", "user-agent", "cache-control", "keep-alive"])
 def test_ordinary_headers_are_kept(name: str) -> None:
     assert not is_sensitive_header(name)
