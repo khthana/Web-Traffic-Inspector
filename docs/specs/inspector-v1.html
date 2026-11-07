@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="th" xml:lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Web Traffic Inspector v1 Spec</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+  <style type="text/css">:root{--bg:#fff;--fg:#1d2433;--muted:#5b6475;--line:#e3e6ec;--accent:#1f6feb;--code:#f4f6f9;--quote:#f0f6ff}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--fg:#e6e9ef;--muted:#9aa3b2;--line:#2b313b;--accent:#6ea8ff;--code:#1d2129;--quote:#18233a}}
+html{background:var(--bg)}
+body{margin:0 auto;max-width:860px;padding:32px 16px 80px;background:var(--bg);color:var(--fg);font:17px/1.75 "IBM Plex Sans Thai","Sarabun","Leelawadee UI","Noto Sans Thai",system-ui,sans-serif}
+h1{font-size:1.9rem;line-height:1.3;margin:0 0 .3em}
+h2{font-size:1.35rem;margin:2.2em 0 .6em;padding-bottom:.3em;border-bottom:2px solid var(--line)}
+p strong:only-child{display:block;margin-top:1.4em;color:var(--accent)}
+a{color:var(--accent)}
+code{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:.88em;background:var(--code);padding:.1em .35em;border-radius:4px;overflow-wrap:anywhere}
+blockquote{margin:1.2em 0;padding:.6em 1em;background:var(--quote);border-left:4px solid var(--accent);border-radius:4px;color:var(--fg)}
+ol,ul{padding-left:1.6em}
+li{margin:.25em 0}
+header#title-block-header{display:none}
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Web Traffic Inspector v1 Spec</h1>
+</header>
+<h1 id="web-traffic-inspector-v1-p0--p1--spec">Web Traffic Inspector v1
+(P0 + P1) — Spec</h1>
+<p>Nov 7, 2026 · GitHub issue: <a href="https://github.com/khthana/Web-Traffic-Inspector/issues/1">#1</a></p>
+<blockquote>
+<p>spec ฉบับเต็ม (UI, data model, API) อยู่ที่ <code>docs/SPEC.md</code>
+ส่วนคำศัพท์อยู่ที่ <code>CONTEXT.md</code> issue นี้สรุป spec นั้น
+และเพิ่มข้อตกลงที่ได้จากการ grilling (ดูหัวข้อ Implementation Decisions) ถ้าขัดกับ
+<code>docs/SPEC.md</code> ให้ยึด issue นี้</p>
+</blockquote>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>ผู้สอนวิชา OOP ที่ใช้ Web เป็น frontend และ FastAPI เป็น backend
+ต้องการให้นักศึกษาเห็นว่า &quot;กดปุ่มหนึ่งครั้ง → เบราว์เซอร์ส่ง HTTP request อะไร → server
+ตอบอะไร&quot; บนเว็บจริงอย่าง advice.co.th</p>
+<p>ตอนนี้ทางเดียวที่ทำได้คือเปิด Chrome DevTools ซึ่งมีปัญหาหลายข้อ</p>
+<ul>
+<li>ตัวหนังสือเล็ก คนท้ายห้องอ่านบนจอโปรเจกเตอร์ไม่ออก</li>
+<li>ไม่ได้ผูก request เข้ากับคลิกที่เป็นต้นเหตุ</li>
+<li>แสดง traffic ของ analytics และ ads ปนกับ API จริง (หน้าเดียวมีขยะ 20
+ตัวขึ้นไป แต่มี API จริงแค่ 5–6 ตัว)</li>
+<li>โชว์ cookie และ token จริงบนจอหน้าห้อง</li>
+<li>นักศึกษาอ่านโค้ดของ DevTools เพื่อเรียนรู้ไม่ได้</li>
+</ul>
+<h2 id="solution">Solution</h2>
+<p>โปรแกรม Python ตัวเดียว (<code>python -m inspector</code>) ที่ต่อเข้ากับ
+Chrome ตัวจริงของผู้สอนผ่าน CDP ทำงานแบบอ่านอย่างเดียว แล้วแสดงหน้า Inspector แบบ
+real-time ที่ <code>127.0.0.1:8000</code></p>
+<ul>
+<li>จัด Exchange เป็น Interaction ตามคลิกที่เป็นต้นเหตุ</li>
+<li>ซ่อนขยะ tracking อัตโนมัติ แต่ยังกดดูได้</li>
+<li>ทำ Redaction ข้อมูลลับก่อนเก็บทุกครั้ง</li>
+<li>สรุป Exchange แต่ละตัวเป็นภาษาไทยที่อ่านเข้าใจ</li>
+<li>UI ออกแบบมาเพื่อจอโปรเจกเตอร์</li>
+</ul>
+<p>ตัวโปรแกรมเองก็เป็นตัวอย่าง OOP + FastAPI + WebSocket ที่นักศึกษาปี 2
+เปิดอ่านได้</p>
+<h2 id="user-stories">User Stories</h2>
+<p><strong>การเชื่อมต่อ Chrome</strong></p>
+<ol type="1">
+<li>ในฐานะผู้สอน ฉันอยากให้ Inspector ต่อเข้ากับ Chrome ที่เปิดโหมด debug อยู่แล้ว
+เพื่อให้เว็บเห็นฉันเป็นผู้ใช้ปกติ ไม่โดน Cloudflare บล็อก</li>
+<li>ในฐานะผู้สอน ฉันอยากเห็นคำสั่งเปิด Chrome ที่ตรงกับ OS พร้อมปุ่มคัดลอก ตอนที่ยังไม่พบ
+Chrome เพื่อจะได้แก้ปัญหาหน้าห้องได้ทันที</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Inspector ลองเชื่อมใหม่ทุก 2 วินาที และเชื่อมได้ภายใน 5
+วินาทีหลังเปิด Chrome เพื่อจะได้ไม่ต้องรีสตาร์ตโปรแกรม</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Inspector ไม่ crash เมื่อปิด Chrome ไป
+แต่แสดงแถบเหลืองและเชื่อมใหม่เอง โดยข้อมูลเดิมยังอยู่</li>
+<li>ในฐานะผู้สอน ฉันอยากให้แท็บที่เปิดใหม่ระหว่างใช้งานกลายเป็น Watched tab อัตโนมัติ
+เพื่อจะได้สาธิตหลายแท็บได้</li>
+<li>ในฐานะผู้สอน ฉันอยากให้แท็บที่เปิดหน้า Inspector เอง และแท็บ
+<code>chrome://</code> / <code>devtools://</code> /
+<code>chrome-extension://</code> ไม่ถูกดัก เพื่อไม่ให้ traffic ของ Inspector
+วนกลับมาท่วม Timeline</li>
+<li>ในฐานะผู้สอน ฉันอยากเห็นจำนวน Watched tab ที่ top bar
+เพื่อให้มั่นใจว่ากำลังดักแท็บที่ถูกต้อง</li>
+<li>ในฐานะผู้สอน ฉันอยากใช้ <code>--launch-chrome</code> ให้ Inspector
+หาและเปิด Chrome ด้วย flag ที่ถูกต้องให้ เพื่อจะได้ไม่ต้องจำคำสั่ง</li>
+<li>ในฐานะนักศึกษาในแลบ ฉันอยากมีสคริปต์ดับเบิลคลิกเปิด Chrome บน Windows และ
+macOS เพื่อให้เริ่มใช้งานได้ง่าย</li>
+</ol>
+<p><strong>การดักและจัดกลุ่ม</strong></p>
+<ol start="10" type="1">
+<li>ในฐานะผู้สอน ฉันอยากให้ดักเฉพาะ fetch/XHR เพื่อไม่ให้มีรูป CSS ฟอนต์ และ script
+ปนเข้ามา</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นทุกคลิกเป็นการ์ดที่บอก tag และข้อความของปุ่ม เช่น
+<code>คลิก &lt;button&gt; &quot;ใส่ตะกร้า&quot;</code> เพื่อจะได้รู้ว่า request
+ไหนมาจากปุ่มไหน</li>
+<li>ในฐานะนักศึกษา ฉันอยากให้ Exchange ที่เริ่มภายใน Correlation window หลังคลิก
+อยู่ใต้การ์ดของคลิกนั้น เพื่อจะได้เห็นว่า event หนึ่งครั้งทำให้เกิด request อะไรบ้าง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้คลิกใหม่ที่เกิดก่อนหมด Correlation window เปิด Click
+interaction ใหม่ เพื่อไม่ให้ request ของสองปุ่มปนกัน</li>
+<li>ในฐานะผู้สอน ฉันอยากให้การจับคู่แยกตามแท็บ เพื่อไม่ให้คลิกในแท็บหนึ่งไปดูด request
+ของอีกแท็บ</li>
+<li>ในฐานะนักศึกษา ฉันอยากให้คลิกลิงก์ที่ทำให้เกิด Navigation แสดงเป็นการ์ดเดียวว่า
+<code>คลิก &lt;a&gt; &quot;โน้ตบุ๊ก&quot; → เปลี่ยนหน้าไป /product/notebooks</code> โดยมี
+Exchange ของหน้าใหม่ (ภายใน 5 วินาทีหลัง Navigation) อยู่ในการ์ดเดียวกัน</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น Page-load interaction เมื่อมีการพิมพ์ URL เอง กด
+refresh หรือกด back เพื่อแยกออกจาก Exchange ที่เกิดจากคลิก</li>
+<li>ในฐานะผู้สอน ฉันอยากให้การเปลี่ยน URL แบบ SPA (<code>pushState</code>)
+ไม่ถูกนับเป็น Navigation เพื่อให้ request ของ SPA ยังอยู่ในการ์ดคลิก</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น Exchange ที่เกิดเองโดยไม่มีคลิก รวมอยู่ใน Background
+interaction เดียวของแท็บนั้น สีจาง เพื่อให้เข้าใจว่ามี timer หรือ polling
+ทำงานอยู่</li>
+<li>ในฐานะผู้สอน ฉันอยากให้การ์ด Background interaction ที่ได้ Exchange
+ใหม่อยู่ที่เดิม ไม่กระโดดขึ้นบนสุด เพื่อให้คนดูบนจอโปรเจกเตอร์ตามทัน</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นข้อความ &quot;ไม่มี API call —
+ปุ่มนี้ทำงานในเบราว์เซอร์อย่างเดียว&quot; เมื่อคลิกแล้วไม่มี Exchange ที่มองเห็น พร้อมจำนวน
+tracking ที่ซ่อนอยู่ เพื่อเรียนรู้ว่าไม่ใช่ทุกปุ่มจะเรียก API แต่เกือบทุกปุ่มถูก track</li>
+<li>ในฐานะผู้สอน ฉันอยากให้การดักคลิกไม่ทำให้เว็บทำงานผิดปกติ (ไม่เรียก
+<code>preventDefault</code> หรือ <code>stopPropagation</code>)
+เพื่อให้สาธิตได้ราบรื่น</li>
+<li>ในฐานะผู้ใช้ ฉันอยากให้ค่าที่พิมพ์ในช่อง input ไม่ถูกส่งออกมาจากสคริปต์ดักคลิกเลย
+เพื่อความเป็นส่วนตัว</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น Exchange ที่ยังไม่ได้คำตอบในสถานะ &quot;รอคำตอบ…&quot;
+แล้วค่อยอัปเดตเมื่อ response มาถึง เพื่อให้เข้าใจเรื่อง async</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น request ที่ล้มเหลว (network error, CORS, abort)
+เป็นสถานะ failed พร้อมเหตุผล</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นเหตุผลเมื่ออ่าน body ไม่ได้ เช่น &quot;เป็นไฟล์ binary
+(application/x-protobuf, 3.2 KB)&quot; เพื่อไม่ให้สับสนว่าทำไม body ว่าง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ response body ที่ยาวเกิน 64 KB ถูกตัด
+พร้อมบอกว่าตัดไปเท่าไร เพื่อให้หน้าเว็บไม่ค้าง</li>
+</ol>
+<p><strong>การกรอง</strong></p>
+<ol start="27" type="1">
+<li>ในฐานะผู้สอน ฉันอยากให้ Blocklist พื้นฐาน (analytics, ads,
+<code>/cdn-cgi/</code>) ซ่อน traffic ขยะเสมอ เพื่อให้ Timeline มีแต่ API
+จริง</li>
+<li>ในฐานะผู้สอน ฉันอยากเลือก Preset <code>advice</code> จาก dropdown
+เพื่อดูเฉพาะ <code>/_advice-api/</code> และ <code>/api/</code> ของ <a href="http://www.advice.co.th">www.advice.co.th</a></li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Exchange ที่ไม่ตรง Focus rule เป็น Hidden exchange
+ด้วย Hidden reason <code>นอกโฟกัส: preset advice</code>
+เพื่อให้กดดูได้ว่าตัดอะไรทิ้งไป</li>
+<li>ในฐานะนักศึกษา ฉันอยากกดปุ่ม &quot;ซ่อน 42 รายการ&quot; แล้วเห็น Hidden exchange
+แบบจางพร้อม Hidden reason เช่น <code>tracking: clarity.ms</code>
+เพื่อเรียนเรื่อง tracking</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Hidden count นับทั้งหมดตั้งแต่กด Clear ครั้งล่าสุด
+แม้ตัวเก่าจะหลุดจาก buffer ไปแล้ว เพื่อให้ตัวเลขสะท้อนปริมาณ tracking จริง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Hidden exchange ไม่ไปดัน Exchange
+ที่มองเห็นออกจากหน่วยความจำ เพื่อย้อนดู request จริงได้ตลอดการสาธิต</li>
+<li>ในฐานะผู้สอน ฉันอยากให้เปลี่ยน Preset แล้ว Exchange
+ที่เก็บไว้ถูกคำนวณสถานะซ่อน/แสดงใหม่ทันที</li>
+<li>ในฐานะผู้สอน ฉันอยากเลือก &quot;กำหนดเอง…&quot; เพื่อแก้กฎการกรองระหว่างสอน (Preset
+<code>custom</code> ที่อยู่ในหน่วยความจำเท่านั้น)</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Page-load และ Background interaction ที่มีแต่ Hidden
+exchange ไม่แสดงการ์ด (ยกเว้นตอนเปิด toggle &quot;ซ่อน&quot;) เพื่อไม่ให้ beacon ท่วม
+Timeline</li>
+</ol>
+<p><strong>Redaction</strong></p>
+<ol start="36" type="1">
+<li>ในฐานะผู้สอน ฉันอยากให้ค่า cookie, set-cookie, authorization และ header
+ที่ชื่อมี token/session/auth/csrf/key/secret ถูกซ่อน โดยบอกความยาวไว้
+เพื่อสาธิตหน้าห้องได้อย่างปลอดภัย</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นชื่อ cookie (เช่น <code>PHPSESSID=••••</code>)
+เพื่อเรียนเรื่อง session โดยไม่เห็นค่าจริง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ key อ่อนไหวใน JSON body, form body และ query
+string ถูกซ่อนแบบ recursive ทั้ง request และ response เพื่อไม่ให้รหัสผ่าน token
+อีเมล หรือเบอร์โทรขึ้นจอ</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ URL ทุกตัว (URL ของ request, URL ของหน้า,
+<code>href</code> ของ element ที่คลิก) ผ่าน Redaction ด้วย เพื่อไม่ให้
+<code>?token=</code> หลุดไปใน Raw, curl หรือ export</li>
+<li>ในฐานะผู้สอน ฉันอยากเห็นป้าย &quot;ไม่ได้ตรวจหาข้อมูลลับ&quot; บน text body ที่ไม่ใช่ JSON
+หรือ form เพื่อให้รู้ว่าต้องระวังเอง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Redaction ปิดไม่ได้ และทำก่อนเก็บ
+เพื่อให้ไม่มีค่าจริงหลุดไปถึง UI, export หรือ curl ได้เลย</li>
+<li>ในฐานะผู้สอน ฉันอยากเพิ่ม key ที่ต้องซ่อนผ่าน Preset ได้ (เพิ่มได้อย่างเดียว ลดไม่ได้)
+เพื่อรองรับเว็บที่ใช้ชื่อ field แปลกๆ</li>
+</ol>
+<p><strong>Timeline และ Detail</strong></p>
+<ol start="43" type="1">
+<li>ในฐานะนักศึกษา ฉันอยากเห็นประโยคสรุปภาษาไทยใต้ Exchange แต่ละตัว เช่น
+<code>เบราว์เซอร์ส่งข้อมูลไป &quot;cart/get&quot; → เซิร์ฟเวอร์ตอบ 200 สำเร็จ ใน 182 ms</code></li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น badge method และ status ที่มีทั้งสีและตัวอักษรกำกับ
+เพื่อให้คนตาบอดสีก็อ่านได้</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Detail เปิด Exchange แรกที่ไม่ใช่ GET
+ของคลิกล่าสุดให้อัตโนมัติ (ปิดได้ด้วย &quot;ตามคลิกล่าสุด&quot;) เพื่อจะได้ไม่ต้องสลับหน้าต่าง</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ Timeline ไม่เลื่อนเองตอนฉันกำลังดูของเก่า แต่แสดงปุ่มลอย
+&quot;มี N รายการใหม่ ↑&quot;</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นแท็บ ภาพรวม / ขาออก / ขาเข้า / ดิบ / คลิก / โค้ด
+เพื่อดู Exchange จากหลายมุม</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นแท็บ &quot;ดิบ&quot; ที่แสดง HTTP เป็นข้อความธรรมดา
+เพื่อให้เข้าใจว่า HTTP เป็นแค่ข้อความ</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นเวลาจากคลิกถึงตอนที่ request ออกไปในแท็บ &quot;คลิก&quot;</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็น JSON เป็น tree ที่ย่อ/ขยายได้ มีสีตามชนิด และ array
+ยาวที่แสดง &quot;[24 รายการ]&quot; เพื่ออ่านโครงสร้างของ response ได้ง่าย</li>
+<li>ในฐานะผู้สอน ฉันอยากปรับขนาดตัวอักษรได้ 3 ระดับ (จำค่าไว้) และสลับธีมสว่าง/มืดได้
+เพื่อให้เหมาะกับโปรเจกเตอร์แต่ละห้อง</li>
+<li>ในฐานะผู้สอน ฉันอยากใช้คีย์ลัด ↑/↓ (เลือก), Space (หยุด/เริ่มต่อ) และ C (ล้าง)
+เพื่อควบคุมได้โดยไม่ต้องใช้เมาส์</li>
+<li>ในฐานะนักศึกษาที่ใช้จอแคบ ฉันอยากให้ Timeline และ Detail ซ้อนกันเมื่อจอแคบกว่า
+900 px</li>
+<li>ในฐานะผู้สอน ฉันอยากเห็นแถบเตือนเรื่องจริยธรรมตอนเปิดครั้งแรก (ปิดได้)</li>
+<li>ในฐานะผู้สอน ฉันอยากให้ UI เชื่อม WebSocket ใหม่เองแบบ backoff แล้วได้
+snapshot ใหม่ เมื่อการเชื่อมต่อหลุด</li>
+</ol>
+<p><strong>การควบคุม</strong></p>
+<ol start="56" type="1">
+<li>ในฐานะผู้สอน ฉันอยากกด Pause เพื่อหยุดรับ request
+และคลิกใหม่ชั่วคราวระหว่างอธิบาย โดย Exchange ที่ค้างรอคำตอบอยู่ยังอัปเดตได้</li>
+<li>ในฐานะผู้สอน ฉันอยากให้หลัง Resume ไม่มีการจับคู่ request ใหม่เข้ากับคลิกที่เกิดก่อน
+Pause</li>
+<li>ในฐานะผู้สอน ฉันอยากกด Clear เพื่อล้างทุกอย่าง รวมถึง Hidden count</li>
+<li>ในฐานะผู้สอน ฉันอยากให้เก็บในหน่วยความจำสูงสุด 500 Exchange ที่มองเห็น
+(เก่าสุดออกก่อน) และไม่เขียนอะไรลงดิสก์เอง</li>
+</ol>
+<p><strong>P1: Export, โค้ด, Flow strip และ Recording
+playback</strong></p>
+<ol start="60" type="1">
+<li>ในฐานะผู้สอน ฉันอยาก export ทั้ง session หรือ Interaction เดียวเป็น
+Recording เพื่อใช้ทำโจทย์แลบ</li>
+<li>ในฐานะนักศึกษา ฉันอยากกด Copy as curl / Python <code>requests</code> /
+JavaScript <code>fetch</code> (ไม่รวม header ที่ถูกซ่อน) เพื่อเอาไปเทียบกับโค้ด
+FastAPI ของตัวเอง</li>
+<li>ในฐานะนักศึกษา ฉันอยากเห็นแอนิเมชัน ผู้ใช้ → เบราว์เซอร์ → เซิร์ฟเวอร์
+ที่เล่นซ้ำและปรับความเร็วได้ และเคารพ <code>prefers-reduced-motion</code></li>
+<li>ในฐานะผู้สอน ฉันอยากเปิด Recording ของรอบซ้อมด้วย
+<code>--replay-file</code> (Recording playback) โดยไม่ต้องต่อ Chrome
+เผื่อเน็ตในห้องมีปัญหา</li>
+<li>ในฐานะผู้สอน ฉันอยากเห็นที่ top bar ว่ากำลังอยู่ในโหมด Recording playback
+พร้อมชื่อไฟล์</li>
+</ol>
+<p><strong>ตัวโปรแกรมในฐานะสื่อการสอน</strong></p>
+<ol start="65" type="1">
+<li>ในฐานะนักศึกษา ฉันอยากเปิด <code>/docs</code> ของ Inspector เพื่อดูตัวอย่าง
+REST API ที่เขียนด้วย FastAPI</li>
+<li>ในฐานะนักศึกษา ฉันอยากอ่านโค้ดที่แต่ละ class มีหน้าที่เดียว มี type hints และมี
+docstring ภาษาไทยบอกว่าสอนแนวคิด OOP อะไร</li>
+<li>ในฐานะนักศึกษา ฉันอยากอ่าน frontend ที่เป็น vanilla JS ไม่มี build step
+และแบ่ง class ล้อกับฝั่ง Python</li>
+<li>ในฐานะนักศึกษา ฉันอยากได้ README ภาษาไทยที่อธิบายวิธีติดตั้ง วิธีใช้
+และคำเตือนเรื่องพอร์ต 9222</li>
+</ol>
+<h2 id="implementation-decisions">Implementation Decisions</h2>
+<p><strong>สถาปัตยกรรม</strong> (ตาม <code>docs/SPEC.md</code> ข้อ 3)</p>
+<ul>
+<li>เป็น Python process เดียว รัน Playwright
+(<code>connect_over_cdp</code>) และ FastAPI/uvicorn บน asyncio loop
+เดียวกัน bind เฉพาะ <code>127.0.0.1</code> ไม่ใช้ proxy และไม่ใช้ headless
+browser</li>
+<li>ต้องใช้ Python 3.11 ขึ้นไป library ที่ใช้คือ fastapi, uvicorn[standard],
+playwright และ pydantic v2 ไม่ต้องรัน <code>playwright install</code></li>
+<li>ทุก model เป็น Pydantic v2 ตามข้อ 5 ของ spec และเพิ่มฟิลด์ดังนี้
+<ul>
+<li><code>Interaction</code> มี
+<code>navigated_to: str | None</code></li>
+<li>Exchange ต้องบอกได้ว่า text body ตัวไหนยังไม่ได้ผ่านการตรวจหาข้อมูลลับ</li>
+</ul></li>
+</ul>
+<p><strong>Capture event: seam ระหว่าง Chrome กับ pipeline</strong></p>
+<ul>
+<li>ฝั่ง capture (ChromeConnector, TrafficCapture, ClickTracker) แปลง
+event ของ Playwright เป็น Capture event ที่เป็นข้อมูลล้วน ไม่มี object ของ
+Playwright ติดไป มี 6 ชนิด: request เริ่ม, response มาถึง (มี body
+หรือเหตุผลที่อ่านไม่ได้), request ล้มเหลว, คลิก, Navigation ของ main frame,
+และแท็บเปิด/ปิด</li>
+<li>Capture event ทุกตัวมี timestamp มาด้วย pipeline ไม่อ่านนาฬิกาเอง</li>
+<li><code>InspectorPipeline</code> รับ Capture event แล้วส่งต่อตามลำดับ
+filter → redact → correlate → summarize → store → broadcast และรับคำสั่ง
+pause/resume/clear/เปลี่ยน preset</li>
+<li><code>create_app(...)</code> รับ pipeline, store และ broadcaster ผ่าน
+argument ไม่มี global state</li>
+</ul>
+<p><strong>Store</strong></p>
+<ul>
+<li>Exchange ที่มองเห็น กับ Hidden exchange อยู่ใน buffer แยกกัน
+(<code>deque</code>) แต่ละ buffer มีเพดานเท่ากับ
+<code>--max-exchanges</code> (ค่าเริ่มต้น 500)</li>
+<li>Hidden count เป็นตัวนับสะสม รีเซ็ตเฉพาะตอน Clear</li>
+<li>เมื่อเปลี่ยน Preset จะคำนวณสถานะซ่อน/แสดงของ Exchange ทุกตัวใหม่
+และย้ายระหว่าง buffer จากนั้นส่ง <code>snapshot</code> ใหม่ไปให้ client</li>
+</ul>
+<p><strong>การกรอง</strong></p>
+<ul>
+<li>Blocklist พื้นฐาน (ตาม spec ข้อ 4.3 บวก origin ของ Inspector เอง)
+ฝังในโค้ด ถอดออกไม่ได้</li>
+<li>Preset อยู่ในไฟล์ <code>presets/&lt;ชื่อ&gt;.json</code> แต่ละไฟล์มี Focus
+rule, Blocklist เพิ่มเติม และ key ที่ต้องซ่อนเพิ่มเติม <strong>ไม่มีไฟล์
+<code>filters.json</code></strong></li>
+<li>Preset <code>custom</code> อยู่ในหน่วยความจำเท่านั้น สร้างโดยคัดลอกจาก
+Preset ที่เลือกอยู่ แก้ผ่าน <code>PUT /api/filters</code> และไม่เขียนลงดิสก์</li>
+<li>ลำดับการตรวจ: Blocklist ก่อน (Hidden reason
+<code>tracking: &lt;host&gt;</code>) แล้วค่อย Focus rule (Hidden reason
+<code>นอกโฟกัส: preset &lt;ชื่อ&gt;</code>)</li>
+<li>class ที่ใช้: <code>FilterRule</code> (abstract) มี
+<code>matches(exchange) -&gt; str | None</code> subclass คือ
+<code>HostBlockRule</code>, <code>PathPrefixRule</code>,
+<code>ResourceTypeRule</code> และมี <code>FilterChain</code> รวมไว้</li>
+</ul>
+<p><strong>Redaction</strong></p>
+<ul>
+<li>ทำก่อนเก็บ ปิดไม่ได้ ครอบคลุม
+<ul>
+<li>headers ตามข้อ 4.4 (cookie ให้เหลือชื่อไว้)</li>
+<li>query</li>
+<li>URL ทุกตัว (<code>url</code>, <code>page_url</code>,
+<code>href</code>) โดยสร้าง URL ใหม่จาก query ที่ซ่อนค่าแล้ว</li>
+<li>JSON body และ form body ทั้ง request และ response ด้วย regex key
+<code>pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card</code>
+แบบไม่สนตัวพิมพ์ และทำแบบ recursive</li>
+</ul></li>
+<li>text body ที่ไม่ใช่ JSON หรือ form ส่งผ่านไปตามเดิมพร้อม flag
+&quot;ไม่ได้ตรวจหาข้อมูลลับ&quot;</li>
+<li>ยอมให้ซ่อนเกินได้ เช่น <code>passenger</code> และ
+<code>ip_address</code></li>
+<li>key ที่เพิ่มผ่าน Preset ใช้กับ Exchange ที่เข้ามาใหม่เท่านั้น</li>
+</ul>
+<p><strong>Correlator</strong></p>
+<ul>
+<li>Click interaction รับ Exchange ที่เริ่มภายใน Correlation window (ค่าเริ่มต้น
+1500 ms) ในแท็บเดียวกัน ถ้ามีคลิกใหม่ ให้ปิดอันเดิมและเปิดอันใหม่</li>
+<li>ถ้าเกิด Navigation ภายใน Correlation window ของคลิก จะไม่เปิด Page-load
+interaction แต่ตั้ง <code>navigated_to</code> และขยาย window ไปอีก 5
+วินาทีนับจาก Navigation</li>
+<li>Navigation ที่ไม่มีคลิกนำหน้าจะเปิด Page-load interaction ที่รับ Exchange
+ภายใน 5 วินาที</li>
+<li>แต่ละแท็บมี Background interaction ที่เปิดอยู่ได้หนึ่งอัน ปิดเมื่อมีคลิกหรือ
+Navigation ในแท็บนั้น การ์ดไม่ย้ายตำแหน่งเมื่อได้ Exchange ใหม่</li>
+<li>Exchange ที่ถูกซ่อนยังถูกจัดเข้า Interaction ตามปกติ การซ่อนการ์ดที่ไม่มี Exchange
+ที่มองเห็นเป็นหน้าที่ของ UI</li>
+</ul>
+<p><strong>Pause</strong></p>
+<ul>
+<li>request ใหม่และคลิกที่เกิดระหว่าง pause ถูกทิ้ง ไม่นับใน Hidden count</li>
+<li>response หรือ failure ของ Exchange ที่ <code>pending</code>
+อยู่ยังอัปเดตได้</li>
+<li>เมื่อ Resume จะเริ่มสถานะของ Correlator ใหม่</li>
+</ul>
+<p><strong>Watched tab</strong></p>
+<ul>
+<li>ไม่ attach และไม่ฉีดสคริปต์ในแท็บที่ origin เป็น Inspector
+(<code>127.0.0.1</code> / <code>localhost</code> ที่พอร์ตของ Inspector) หรือ
+<code>chrome://</code>, <code>devtools://</code>,
+<code>chrome-extension://</code></li>
+<li>แท็บที่ navigate เข้าหรือออกจากหน้าเหล่านี้ จะเปลี่ยนสถานะ watched
+ตามไปด้วย</li>
+</ul>
+<p><strong>API</strong> (ตามข้อ 5 ของ spec)</p>
+<ul>
+<li>WebSocket <code>/ws</code> ส่งได้ทางเดียวจาก server:
+<code>snapshot</code>, <code>interaction.new</code>,
+<code>exchange.new</code>, <code>exchange.update</code>,
+<code>status</code>, <code>cleared</code> และเพิ่ม
+<code>interaction.update</code> (สำหรับ <code>navigated_to</code>
+และการ์ดเบื้องหลังที่ได้ Exchange เพิ่ม)</li>
+<li><code>status</code> มี <code>mode: &quot;live&quot; | &quot;playback&quot;</code>
+และชื่อไฟล์ Recording</li>
+<li>REST: <code>/api/status</code>, <code>/api/interactions</code>,
+<code>/api/exchanges/{id}</code>, <code>/api/pause|resume|clear</code>,
+<code>GET|PUT /api/filters</code>,
+<code>/api/export?interaction_id=</code></li>
+</ul>
+<p><strong>Recording playback (P1)</strong></p>
+<ul>
+<li><code>--replay-file &lt;path&gt;</code> โหลด Recording เข้า store
+แล้วไม่ต่อ Chrome เลย</li>
+<li>flag ใช้ชื่อตาม spec แต่ในโค้ดเรียกโหมดนี้ว่า Recording playback (ไม่ใช่
+&quot;replay&quot; ซึ่งหมายถึงการส่ง request ซ้ำที่ห้ามทำ)</li>
+</ul>
+<p><strong>Frontend</strong></p>
+<ul>
+<li>vanilla JS ไม่มี build step แบ่งเป็น class <code>InspectorSocket</code>,
+<code>TimelineView</code>, <code>DetailView</code>,
+<code>JsonViewer</code>, <code>FlowStrip</code></li>
+<li>ไม่โหลดไฟล์จาก CDN ยกเว้นฟอนต์ที่มี fallback</li>
+</ul>
+<p><strong>ลำดับงาน</strong> ตามข้อ 10.3 ของ spec: core + tests →
+broadcaster/app → capture/main → UI (P0 แล้ว P1) → scripts/README</p>
+<h2 id="testing-decisions">Testing Decisions</h2>
+<ul>
+<li><strong>test ที่ดีต้องตรวจพฤติกรรมที่มองเห็นจากภายนอก</strong>
+ไม่ผูกกับโครงสร้างภายใน ถ้าแยกหรือรวม class ข้างในใหม่ test ต้องยังผ่าน</li>
+<li><strong>seam หลักมีจุดเดียว:</strong> ป้อน Capture event ปลอม (กำหนด
+timestamp เอง) เข้า <code>InspectorPipeline</code> แล้วตรวจผลผ่าน FastAPI
+<code>TestClient</code> ทั้ง REST และ WebSocket ใช้ seam นี้ครอบคลุม
+<ul>
+<li>การจับคู่คลิก (window, คลิกซ้อน, แยกแท็บ, Navigation ที่มาจากคลิก, Page-load,
+Background)</li>
+<li>การกรอง (Blocklist, Focus rule, Hidden reason, buffer แยก, Hidden
+count, เปลี่ยน preset)</li>
+<li>Redaction ตั้งแต่ต้นจนจบ (ไม่มีค่าจริงใน <code>/api/exchanges/{id}</code>,
+export, ข้อความ WS)</li>
+<li>pause/resume/clear, เพดาน 500</li>
+<li>ลำดับข้อความ WS (<code>snapshot</code> ตอนเชื่อม,
+<code>exchange.new</code> แล้วตามด้วย <code>exchange.update</code>)</li>
+<li>Recording playback</li>
+</ul></li>
+<li><strong>test แบบตาราง แยกตามหน่วย</strong> (เฉพาะ pure function
+ที่มีกรณีเยอะ)
+<ul>
+<li>Summarizer: ครบทุก method × status ตามข้อ 4.5</li>
+<li>กฎ key ของ Redactor: ครอบคลุม header, JSON ซ้อนหลายชั้น, form, cookie
+ที่เหลือแต่ชื่อ, และ body ที่ไม่ใช่ JSON ไม่ crash</li>
+</ul></li>
+<li><strong>integration test ที่ใช้ Chrome จริง</strong>
+(<code>@pytest.mark.chrome</code> ไม่บังคับ): เปิดหน้า HTML fixture ที่มีปุ่มเรียก
+fetch ไปยัง FastAPI จำลอง แล้วตรวจผ่าน seam เดียวกันว่าได้ Interaction
+ที่ถูกต้อง</li>
+<li>ยังไม่มี test เดิมใน repo (repo ว่าง) test ชุดนี้จะเป็น prior art ชุดแรก</li>
+<li>รัน pytest หลังจบแต่ละขั้น และทำ checklist ทดสอบด้วยมือตามข้อ 9.2 ของ spec
+ตอนท้าย</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>แก้, บล็อก หรือส่ง request ซ้ำ ไม่ว่ารูปแบบใด</li>
+<li>P2 ทั้งหมด: slow-motion, WebSocket frames, Server-Sent Events</li>
+<li>แอปมือถือ, แอปเดสก์ท็อป และเบราว์เซอร์อื่นนอกจาก Chrome</li>
+<li>การเขียนข้อมูลลงดิสก์โดยอัตโนมัติ (รวมถึงการบันทึก Preset
+<code>custom</code>)</li>
+<li>การตรวจหาข้อมูลลับใน text body ที่ไม่ใช่ JSON หรือ form และใน binary
+body</li>
+<li>request จาก Service Worker (ข้อจำกัดที่ทราบแล้ว)</li>
+</ul>
+<h2 id="further-notes">Further Notes</h2>
+<ul>
+<li>Chrome 136 ขึ้นไปต้องใช้ <code>--user-data-dir</code> แยก
+ผู้สอนจึงต้องล็อกอินเว็บใหม่ในโปรไฟล์สาธิต</li>
+<li>การจับคู่ด้วยเวลาอาจผิดพลาดได้ ถ้ามี polling เกิดขึ้นพอดีในช่วงเดียวกับคลิก
+ข้อนี้รับได้และควรบอกไว้ใน README</li>
+<li>ข้อมูลจริงของ advice.co.th ที่ใช้ทำ acceptance test อยู่ในข้อ 9.1 ของ spec
+(ตรวจเมื่อ 5 พ.ย. 2569 เว็บอาจเปลี่ยนไปแล้ว)</li>
+<li>งานทำบน branch <code>feat/inspector-v1</code> และ commit
+หลังจบแต่ละขั้นที่ test ผ่าน</li>
+</ul>
+</body>
+</html>
