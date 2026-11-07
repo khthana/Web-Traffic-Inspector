@@ -34,7 +34,7 @@ class ClickEvent(BaseModel):
 
 
 class HttpRequest(BaseModel):
-    """ขาออก (Request) — ผ่าน Redaction แล้ว"""
+    """ขาออก (Request) — ต้องผ่าน Redaction ก่อนเก็บ (ticket #3)"""
 
     method: str
     url: str
@@ -44,11 +44,11 @@ class HttpRequest(BaseModel):
     headers: dict[str, str]
     body: str | None
     body_kind: BodyKind
-    body_unscanned: bool = False  # True = body เป็น text ที่ไม่ได้ตรวจหาข้อมูลลับ
+    body_unscanned: bool = True  # True = ยังไม่ได้ตรวจหาข้อมูลลับ (ค่าเริ่มต้นแบบปลอดภัยไว้ก่อน)
 
 
 class HttpResponse(BaseModel):
-    """ขาเข้า (Response) — ผ่าน Redaction แล้ว"""
+    """ขาเข้า (Response) — ต้องผ่าน Redaction ก่อนเก็บ (ticket #3)"""
 
     status: int
     status_text: str
@@ -57,7 +57,7 @@ class HttpResponse(BaseModel):
     body_kind: BodyKind
     body_truncated_bytes: int = 0
     body_error: str | None = None
-    body_unscanned: bool = False
+    body_unscanned: bool = True
 
 
 class HttpExchange(BaseModel):

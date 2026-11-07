@@ -30,6 +30,6 @@ def body_kind(headers: dict[str, str], body: str | None) -> BodyKind:
 def header(headers: dict[str, str], name: str) -> str:
     """อ่าน header โดยไม่สนตัวพิมพ์เล็ก/ใหญ่ ถ้าไม่มีคืน string ว่าง"""
     for key, value in headers.items():
-        if key.lower() == name:
+        if key.lower() == name.lower():
             return value
     return ""

@@ -2,7 +2,8 @@
 // แบ่งเป็น class เล็กๆ ล้อกับฝั่ง Python: InspectorSocket ≈ Broadcaster, TimelineView ≈ EventStore
 "use strict";
 
-/** เชื่อม WebSocket /ws และเชื่อมใหม่เองแบบ backoff เมื่อหลุด */
+/** เชื่อม WebSocket /ws และเชื่อมใหม่เองแบบ backoff เมื่อหลุด
+ *  สอนแนวคิด: callback — ส่งต่อข้อความให้ผู้อื่นจัดการ ไม่ต้องรู้ว่าใครใช้ */
 class InspectorSocket {
   constructor(onMessage, onConnectionChange) {
     this.onMessage = onMessage;
@@ -26,7 +27,8 @@ class InspectorSocket {
   }
 }
 
-/** แสดงรายการ Exchange ใหม่สุดอยู่บน */
+/** แสดงรายการ Exchange ใหม่สุดอยู่บน
+ *  สอนแนวคิด: state ใน object — จำว่า Exchange ไหนวาดไว้แล้ว (Map) เพื่ออัปเดตแถวเดิม */
 class TimelineView {
   constructor(listElement, emptyElement) {
     this.list = listElement;
@@ -71,7 +73,8 @@ class TimelineView {
   }
 }
 
-/** จุดสถานะ Chrome ที่ top bar */
+/** จุดสถานะ Chrome ที่ top bar
+ *  สอนแนวคิด: single responsibility — class นี้รู้แค่เรื่องแสดงสถานะ */
 class StatusView {
   constructor(element) {
     this.element = element;

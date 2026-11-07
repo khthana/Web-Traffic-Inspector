@@ -27,6 +27,15 @@
     --fg: #e8ebf0;
     --muted: #a3abb8;
     --line: #333a45;
+    --ok: #4cc26a;
+    --warn: #f0a33a;
+    --bad: #ff7a70;
+    --neutral: #9aa3b0;
+    --get: #5aa9ff;
+    --post: #4cc26a;
+    --put: #f0a33a;
+    --delete: #ff7a70;
+    --badge-fg: #111418;
   }
 }
 
@@ -36,6 +45,15 @@
   --fg: #e8ebf0;
   --muted: #a3abb8;
   --line: #333a45;
+  --ok: #4cc26a;
+  --warn: #f0a33a;
+  --bad: #ff7a70;
+  --neutral: #9aa3b0;
+  --get: #5aa9ff;
+  --post: #4cc26a;
+  --put: #f0a33a;
+  --delete: #ff7a70;
+  --badge-fg: #111418;
 }
 
 * { box-sizing: border-box; }

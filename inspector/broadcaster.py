@@ -11,7 +11,10 @@ Message = dict[str, Any]
 
 
 class Subscription:
-    """คิวข้อความของ client หนึ่งตัว"""
+    """คิวข้อความของ client หนึ่งตัว
+
+    สอนแนวคิด: encapsulation — ซ่อน asyncio.Queue ไว้ ผู้ใช้เห็นแค่ push/next
+    """
 
     def __init__(self) -> None:
         self._queue: asyncio.Queue[Message] = asyncio.Queue()
