@@ -107,5 +107,6 @@ class InspectorStatus(BaseModel):
     paused: bool = False
     hidden_count: int = 0
     tabs: list[TabInfo] = []
+    chrome_launch_command: str = ""  # คำสั่งเปิด Chrome โหมด debug ตาม OS ของเครื่องนี้
     mode: Literal["live", "playback"] = "live"
     recording_file: str | None = None

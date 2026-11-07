@@ -90,6 +90,38 @@ class StatusView {
   }
 }
 
+/** บอกวิธีเปิด Chrome (ตอนยังไม่เคยเชื่อม) และแถบเหลืองเมื่อ Chrome หลุดกลางคาบ
+ *  สอนแนวคิด: state ใน object — จำว่า "เคยเชื่อมสำเร็จแล้วหรือยัง" เพื่อเลือกข้อความที่เหมาะ */
+class ChromeHelpView {
+  constructor(setupElement, bannerElement) {
+    this.setup = setupElement;
+    this.banner = bannerElement;
+    this.wasConnected = false;
+    this.setup.querySelector("#copy-command").addEventListener("click", () => this.copyCommand());
+  }
+
+  show(status) {
+    const connected = status.chrome === "connected";
+    if (connected) this.wasConnected = true;
+    this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
+    const port = status.chrome_launch_command.match(/--remote-debugging-port=(\d+)/);
+    this.setup.querySelector("#chrome-port").textContent = port ? port[1] : "9222";
+    this.setup.hidden = connected || this.wasConnected;
+    this.banner.hidden = connected || !this.wasConnected;
+  }
+
+  async copyCommand() {
+    const button = this.setup.querySelector("#copy-command");
+    try {
+      await navigator.clipboard.writeText(this.setup.querySelector("#chrome-command").textContent);
+      button.textContent = "คัดลอกแล้ว ✓";
+    } catch {
+      button.textContent = "คัดลอกไม่ได้ — เลือกข้อความเองนะ";
+    }
+    setTimeout(() => { button.textContent = "คัดลอกคำสั่ง"; }, 2000);
+  }
+}
+
 const LOCK_ICON = `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" focusable="false">
   <path fill="currentColor" d="M5 7V5a3 3 0 0 1 6 0v2h1a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h1Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z"/>
 </svg>`;
@@ -143,16 +175,24 @@ function main() {
     document.getElementById("timeline-empty"),
   );
   const status = new StatusView(document.getElementById("chrome-status"));
+  const chromeHelp = new ChromeHelpView(
+    document.getElementById("chrome-setup"),
+    document.getElementById("chrome-banner"),
+  );
   const banner = document.getElementById("socket-banner");
+  const showStatus = (data) => {
+    status.show(data);
+    chromeHelp.show(data);
+  };
 
   const handlers = {
     snapshot: (data) => {
       timeline.reset(data.exchanges);
-      status.show(data.status);
+      showStatus(data.status);
     },
     "exchange.new": (data) => timeline.upsert(data),
     "exchange.update": (data) => timeline.upsert(data),
-    status: (data) => status.show(data),
+    status: showStatus,
   };
 
   const socket = new InspectorSocket(

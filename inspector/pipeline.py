@@ -6,9 +6,9 @@
 from typing import Any
 
 from inspector.broadcaster import Broadcaster
-from inspector.capture_events import CaptureEvent, RequestFailed, RequestStarted, ResponseReceived
+from inspector.capture_events import CaptureEvent, RequestFailed, RequestStarted, ResponseReceived, TabChanged
 from inspector.http_parts import body_kind, split_url
-from inspector.models import HttpExchange, HttpRequest, HttpResponse, InspectorStatus
+from inspector.models import HttpExchange, HttpRequest, HttpResponse, InspectorStatus, TabInfo
 from inspector.redactor import Redactor
 from inspector.store import EventStore
 
@@ -16,13 +16,20 @@ from inspector.store import EventStore
 class InspectorPipeline:
     """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → store → broadcast"""
 
-    def __init__(self, store: EventStore, broadcaster: Broadcaster, redactor: Redactor) -> None:
+    def __init__(
+        self,
+        store: EventStore,
+        broadcaster: Broadcaster,
+        redactor: Redactor,
+        chrome_launch_command: str = "",
+    ) -> None:
         self._store = store
         self._redactor = redactor
         self._broadcaster = broadcaster
         self._next_id = 0
         self._pending: dict[str, str] = {}  # request_key → exchange id
-        self.status = InspectorStatus()
+        self._tabs: dict[str, TabInfo] = {}
+        self.status = InspectorStatus(chrome_launch_command=chrome_launch_command)
 
     def handle(self, event: CaptureEvent) -> None:
         """รับ Capture event หนึ่งตัว (ต้องเรียกบน event loop ของ app)"""
@@ -32,6 +39,18 @@ class InspectorPipeline:
             self._on_response(event)
         elif isinstance(event, RequestFailed):
             self._on_failure(event)
+        elif isinstance(event, TabChanged):
+            self._on_tab(event)
+
+    def set_chrome_connected(self, connected: bool) -> None:
+        """ChromeConnector แจ้งว่าเชื่อมได้หรือหลุดแล้ว (ข้อมูลเดิมยังอยู่ครบ)"""
+        if not connected:
+            self._tabs.clear()
+            for request_key in list(self._pending):
+                exchange = self._take_pending(request_key)
+                if exchange is not None:
+                    self._finish(exchange.model_copy(update={"state": "failed", "failure": "Chrome หลุดก่อนได้คำตอบ"}))
+        self._publish_status(chrome="connected" if connected else "disconnected")
 
     def snapshot(self) -> dict[str, Any]:
         """ข้อมูลทั้งหมดที่ client ใหม่ต้องรู้"""
@@ -114,6 +133,17 @@ class InspectorPipeline:
                 update={"state": "failed", "failure": event.failure, "duration_ms": event.ts - exchange.started_at}
             )
         )
+
+    def _on_tab(self, event: TabChanged) -> None:
+        if event.open:
+            self._tabs[event.tab_id] = TabInfo(tab_id=event.tab_id, url=self._redactor.url(event.url))
+        else:
+            self._tabs.pop(event.tab_id, None)
+        self._publish_status()
+
+    def _publish_status(self, **changes: object) -> None:
+        self.status = self.status.model_copy(update={**changes, "tabs": list(self._tabs.values())})
+        self._broadcaster.publish("status", self.status.model_dump())
 
     def _take_pending(self, request_key: str) -> HttpExchange | None:
         """หา Exchange ที่รอคำตอบอยู่ ถ้าไม่รู้จักหรือถูกตัดออกจาก store ไปแล้วคืน None"""

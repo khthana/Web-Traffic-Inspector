@@ -18,10 +18,20 @@
   </header>
 
   <div class="banner" id="socket-banner" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
+  <div class="banner banner-warn" id="chrome-banner" role="status" hidden>
+    Chrome หลุดการเชื่อมต่อ — ข้อมูลเดิมยังอยู่ครบ กำลังลองเชื่อมใหม่ทุก 2 วินาที
+  </div>
 
   <main class="layout">
     <section class="timeline" aria-label="Timeline">
       <h2 class="column-title">TIMELINE · ใหม่สุดอยู่บน</h2>
+      <div class="chrome-setup" id="chrome-setup" hidden>
+        <h3>ไม่พบ Chrome ที่พอร์ต <span id="chrome-port">9222</span></h3>
+        <p>เปิด Chrome ด้วยคำสั่งนี้ (ใช้โปรไฟล์แยกสำหรับสอน ไม่ต้องปิด Chrome ตัวเดิม):</p>
+        <pre class="command"><code id="chrome-command"></code></pre>
+        <button type="button" id="copy-command">คัดลอกคำสั่ง</button>
+        <p class="hint">Inspector จะเชื่อมให้เองภายในไม่กี่วินาทีหลัง Chrome เปิด</p>
+      </div>
       <p class="empty" id="timeline-empty">พร้อมแล้ว — ลองเปิดเว็บใน Chrome แล้วกดปุ่มสักปุ่ม</p>
       <ol class="exchange-list" id="exchange-list"></ol>
     </section>

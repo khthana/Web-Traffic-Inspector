@@ -1,7 +1,7 @@
 """Test harness ของ seam หลัก: ป้อน Capture event ปลอม แล้วสังเกตผลผ่าน REST และ WebSocket"""
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import anyio
@@ -12,6 +12,7 @@ from starlette.testclient import WebSocketTestSession
 from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
+from inspector.chrome import chrome_launch_command
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -29,6 +30,11 @@ class Harness:
         assert self.client.portal is not None
         for event in events:
             self.client.portal.call(self.pipeline.handle, event)
+
+    def call(self, func: Callable[..., object], *args: object) -> None:
+        """เรียกเมธอดของ pipeline บน event loop เดียวกับ app"""
+        assert self.client.portal is not None
+        self.client.portal.call(func, *args)
 
     @staticmethod
     def receive(ws: WebSocketTestSession, timeout: float = 2.0) -> Any:
@@ -51,7 +57,12 @@ class Harness:
 def harness() -> Iterator[Harness]:
     store = EventStore(max_exchanges=500)
     broadcaster = Broadcaster()
-    pipeline = InspectorPipeline(store=store, broadcaster=broadcaster, redactor=Redactor())
+    pipeline = InspectorPipeline(
+        store=store,
+        broadcaster=broadcaster,
+        redactor=Redactor(),
+        chrome_launch_command=chrome_launch_command("http://127.0.0.1:9222"),
+    )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)
