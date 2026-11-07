@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 BodyKind = Literal["json", "form", "text", "binary", "none"]
+InteractionKind = Literal["click", "page_load", "background"]
 
 
 class ElementInfo(BaseModel):
@@ -84,7 +85,7 @@ class Interaction(BaseModel):
     """กลุ่มของ Exchange ที่มีสาเหตุร่วมกัน"""
 
     id: str
-    kind: Literal["click", "page_load", "background"]
+    kind: InteractionKind
     click: ClickEvent | None = None
     tab_id: str
     page_url: str

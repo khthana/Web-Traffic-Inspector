@@ -10,6 +10,7 @@
   --ok: #146c2e;
   --warn: #8a4b00;
   --warn-bg: #fff4d6;
+  --highlight: #e3efff;
   --bad: #b3261e;
   --neutral: #4b5563;
   --get: #0b57a8;
@@ -31,6 +32,7 @@
     --ok: #4cc26a;
     --warn: #f0a33a;
     --warn-bg: #3a2c10;
+  --highlight: #1d3352;
     --bad: #ff7a70;
     --neutral: #9aa3b0;
     --get: #5aa9ff;
@@ -50,6 +52,7 @@
   --ok: #4cc26a;
   --warn: #f0a33a;
   --warn-bg: #3a2c10;
+  --highlight: #1d3352;
   --bad: #ff7a70;
   --neutral: #9aa3b0;
   --get: #5aa9ff;
@@ -133,6 +136,27 @@ body {
 .empty { color: var(--muted); }
 
 .exchange-list { list-style: none; margin: 0; padding: 0; }
+
+.card-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 4px; background: var(--bg); }
+.card.is-new { animation: card-arrive 1.5s ease-out; }
+@keyframes card-arrive {
+  from { background: var(--highlight); border-color: var(--get); }
+  to { background: var(--bg); border-color: var(--line); }
+}
+.card.kind-background { background: var(--surface); }
+.card.kind-background .card-head { color: var(--muted); }
+
+.card-head { display: flex; align-items: flex-start; gap: .5rem; padding-bottom: 4px; min-width: 0; }
+.card-icon { display: inline-flex; color: var(--muted); }
+.card-title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }  /* ขึ้นบรรทัดใหม่ได้ อ่านครบบนจอโปรเจกเตอร์ */
+.card-meta { color: var(--muted); font-size: .85em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.no-calls { display: none; color: var(--muted); font-size: .9em; padding: 4px 0 6px; }
+/* โผล่หลัง Correlation window (1.5 วินาที) จะได้ไม่กะพริบก่อน request มาถึง */
+.card.is-empty .no-calls { display: block; animation: appear-later 1.5s step-end; }
+@keyframes appear-later { from { visibility: hidden; } to { visibility: visible; } }
 
 .exchange {
   display: grid;

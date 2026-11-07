@@ -6,27 +6,39 @@
 from typing import Any
 
 from inspector.broadcaster import Broadcaster
-from inspector.capture_events import CaptureEvent, RequestFailed, RequestStarted, ResponseReceived, TabChanged
+from inspector.capture_events import (
+    CaptureEvent,
+    ClickCaptured,
+    NavigationOccurred,
+    RequestFailed,
+    RequestStarted,
+    ResponseReceived,
+    TabChanged,
+)
+from inspector.correlator import Change, Correlator
 from inspector.http_parts import body_kind, split_url
-from inspector.models import HttpExchange, HttpRequest, HttpResponse, InspectorStatus, TabInfo
+from inspector.models import ClickEvent, HttpExchange, HttpRequest, HttpResponse, InspectorStatus, TabInfo
 from inspector.redactor import Redactor
 from inspector.store import EventStore
 
 
 class InspectorPipeline:
-    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → store → broadcast"""
+    """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → correlate → store → broadcast"""
 
     def __init__(
         self,
         store: EventStore,
         broadcaster: Broadcaster,
         redactor: Redactor,
+        correlator: Correlator,
         chrome_launch_command: str = "",
     ) -> None:
         self._store = store
         self._redactor = redactor
+        self._correlator = correlator
         self._broadcaster = broadcaster
         self._next_id = 0
+        self._next_click = 0
         self._pending: dict[str, str] = {}  # request_key → exchange id
         self._tabs: dict[str, TabInfo] = {}
         self.status = InspectorStatus(chrome_launch_command=chrome_launch_command)
@@ -39,6 +51,10 @@ class InspectorPipeline:
             self._on_response(event)
         elif isinstance(event, RequestFailed):
             self._on_failure(event)
+        elif isinstance(event, ClickCaptured):
+            self._on_click(event)
+        elif isinstance(event, NavigationOccurred):
+            self._on_navigation(event)
         elif isinstance(event, TabChanged):
             self._on_tab(event)
 
@@ -77,8 +93,12 @@ class InspectorPipeline:
             body_kind=kind,
             body_unscanned=body.unscanned,
         )
+        exchange_id = self._new_id()
+        group = self._correlator.exchange(exchange_id, event.tab_id, page_url, event.ts)
+        self._save_interaction(group)
         exchange = HttpExchange(
-            id=self._new_id(),
+            id=exchange_id,
+            interaction_id=group.interaction.id,
             tab_id=event.tab_id,
             page_url=page_url,
             resource_type=event.resource_type,
@@ -133,6 +153,29 @@ class InspectorPipeline:
                 update={"state": "failed", "failure": event.failure, "duration_ms": event.ts - exchange.started_at}
             )
         )
+
+    def _on_click(self, event: ClickCaptured) -> None:
+        self._next_click += 1
+        page_url = self._redactor.url(event.page_url)
+        href = None if event.element.href is None else self._redactor.url(event.element.href)
+        click = ClickEvent(
+            id=f"click_{self._next_click:04d}",
+            tab_id=event.tab_id,
+            page_url=page_url,
+            ts=event.ts,
+            element=event.element.model_copy(update={"href": href}),
+        )
+        self._save_interaction(self._correlator.click(click))
+
+    def _on_navigation(self, event: NavigationOccurred) -> None:
+        self._save_interaction(self._correlator.navigation(event.tab_id, self._redactor.url(event.url), event.ts))
+
+    def _save_interaction(self, change: Change) -> None:
+        self._store.put_interaction(change.interaction)
+        if not change.announce:
+            return
+        message = "interaction.new" if change.is_new else "interaction.update"
+        self._broadcaster.publish(message, change.interaction.model_dump())
 
     def _on_tab(self, event: TabChanged) -> None:
         if event.open:

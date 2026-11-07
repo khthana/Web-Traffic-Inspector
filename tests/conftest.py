@@ -13,6 +13,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture_events import CaptureEvent
 from inspector.chrome import chrome_launch_command
+from inspector.correlator import Correlator
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -61,6 +62,7 @@ def harness() -> Iterator[Harness]:
         store=store,
         broadcaster=broadcaster,
         redactor=Redactor(),
+        correlator=Correlator(window_ms=1500),
         chrome_launch_command=chrome_launch_command("http://127.0.0.1:9222"),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)

@@ -11,12 +11,12 @@ from inspector.models import HttpExchange, Interaction
 
 
 class EventStore:
-    """ที่เก็บ Exchange (เก่าสุดออกก่อนเมื่อเกินเพดาน) และ Interaction"""
+    """ที่เก็บ Exchange และ Interaction (เก่าสุดออกก่อนเมื่อเกินเพดาน)"""
 
     def __init__(self, max_exchanges: int = 500) -> None:
         self._order: deque[str] = deque()
         self._exchanges: dict[str, HttpExchange] = {}
-        self._interactions: dict[str, Interaction] = {}
+        self._interactions: dict[str, Interaction] = {}  # dict จำลำดับที่ใส่เข้าไป: เก่าสุดอยู่หน้า
         self._max = max_exchanges
 
     def add_exchange(self, exchange: HttpExchange) -> None:
@@ -33,6 +33,12 @@ class EventStore:
 
     def get_exchange(self, exchange_id: str) -> HttpExchange | None:
         return self._exchanges.get(exchange_id)
+
+    def put_interaction(self, interaction: Interaction) -> None:
+        """เพิ่ม Interaction ใหม่ หรือแทนที่ตัวเดิมโดยไม่เปลี่ยนลำดับ (การ์ดจึงไม่กระโดดขึ้นบน)"""
+        self._interactions[interaction.id] = interaction
+        while len(self._interactions) > self._max:
+            del self._interactions[next(iter(self._interactions))]
 
     def interactions(self) -> list[Interaction]:
         return list(self._interactions.values())

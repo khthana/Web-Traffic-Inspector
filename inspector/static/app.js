@@ -1,5 +1,5 @@
 // Web Traffic Inspector — ฝั่งหน้าเว็บ (vanilla JS ไม่มี build step)
-// แบ่งเป็น class เล็กๆ ล้อกับฝั่ง Python: InspectorSocket ≈ Broadcaster, TimelineView ≈ EventStore
+// แบ่งเป็น class เล็กๆ ล้อกับฝั่ง Python: InspectorSocket ≈ Broadcaster, TimelineView ≈ EventStore + Correlator
 "use strict";
 
 /** เชื่อม WebSocket /ws และเชื่อมใหม่เองแบบ backoff เมื่อหลุด
@@ -27,51 +27,137 @@ class InspectorSocket {
   }
 }
 
-/** แสดงรายการ Exchange ใหม่สุดอยู่บน
- *  สอนแนวคิด: state ใน object — จำว่า Exchange ไหนวาดไว้แล้ว (Map) เพื่ออัปเดตแถวเดิม */
+/** Timeline: การ์ด Interaction ใหม่สุดอยู่บน แต่ละการ์ดมีแถว Exchange อยู่ข้างใน
+ *  สอนแนวคิด: state ใน object — จำว่าการ์ดและแถวไหนวาดไว้แล้ว (Map) เพื่ออัปเดตที่เดิม ไม่วาดใหม่ทั้งหน้า */
 class TimelineView {
   constructor(listElement, emptyElement) {
     this.list = listElement;
     this.empty = emptyElement;
-    this.rows = new Map(); // exchange id → <li>
+    this.cards = new Map(); // interaction id → <li class="card">
+    this.rows = new Map(); // exchange id → <li class="exchange">
   }
 
-  reset(exchanges) {
+  reset(interactions, exchanges) {
     this.list.replaceChildren();
+    this.cards.clear();
     this.rows.clear();
-    exchanges.forEach((exchange) => this.upsert(exchange));
+    interactions.forEach((interaction) => this.upsertInteraction(interaction, false));
+    exchanges.forEach((exchange) => this.upsertExchange(exchange));
     this.updateEmpty();
   }
 
-  upsert(exchange) {
-    const row = this.renderRow(exchange);
+  /** การ์ดใหม่ขึ้นบนสุดพร้อมไฮไลต์ การ์ดเดิมเปลี่ยนแค่หัวการ์ด ไม่ย้ายตำแหน่ง */
+  upsertInteraction(interaction, highlight = true) {
+    const existing = this.cards.get(interaction.id);
+    if (existing) {
+      existing.querySelector(".card-head").replaceWith(cardHead(interaction));
+      return;
+    }
+    const card = renderCard(interaction);
+    if (highlight) card.classList.add("is-new");
+    this.list.prepend(card);
+    this.cards.set(interaction.id, card);
+    this.updateEmpty();
+  }
+
+  upsertExchange(exchange) {
+    const card = this.cards.get(exchange.interaction_id);
+    if (!card) return; // การ์ดถูกตัดออกจาก store ไปแล้ว
+    const row = renderExchangeRow(exchange);
     const existing = this.rows.get(exchange.id);
     if (existing) {
       existing.replaceWith(row);
     } else {
-      this.list.prepend(row);
+      card.querySelector(".exchange-list").append(row);
+      card.classList.remove("is-empty");
     }
     this.rows.set(exchange.id, row);
-    this.updateEmpty();
   }
 
   updateEmpty() {
-    this.empty.hidden = this.rows.size > 0;
+    this.empty.hidden = this.cards.size > 0;
   }
+}
 
-  renderRow(exchange) {
-    const li = document.createElement("li");
-    li.className = "exchange";
-    li.dataset.id = exchange.id;
-    li.append(
-      badge(exchange.request.method, `method-${exchange.request.method}`),
-      textSpan("path", exchange.request.path, exchange.request.url),
-      redactionFlags(exchange),
-      statusBadge(exchange),
-      textSpan("ms", exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`),
-    );
-    return li;
+const KIND_ICONS = {
+  // เมาส์ = คลิก, เอกสาร = โหลดหน้า, นาฬิกา = เกิดเองเบื้องหลัง
+  click: '<rect x="4" y="1.5" width="8" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  page_load: '<path d="M4 1.5h5l3 3v10H4Zm5 0v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  background: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+};
+
+function renderCard(interaction) {
+  const card = document.createElement("li");
+  card.className = `card kind-${interaction.kind} is-empty`;
+  card.dataset.id = interaction.id;
+  const rows = document.createElement("ol");
+  rows.className = "exchange-list";
+  card.append(cardHead(interaction), rows);
+  if (interaction.kind === "click") {
+    card.append(textSpan("no-calls", "ไม่มี API call — ปุ่มนี้ทำงานในเบราว์เซอร์อย่างเดียว"));
   }
+  return card;
+}
+
+function cardHead(interaction) {
+  const head = document.createElement("div");
+  head.className = "card-head";
+  const icon = document.createElement("span");
+  icon.className = "card-icon";
+  icon.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" aria-hidden="true" focusable="false">${KIND_ICONS[interaction.kind]}</svg>`;
+  const page = safeUrl(interaction.page_url);
+  head.append(
+    icon,
+    textSpan("card-title", cardTitle(interaction)),
+    textSpan("card-meta", `${clockTime(interaction.started_at)}${page ? ` · ${page.host}` : ""}`),
+  );
+  return head;
+}
+
+function cardTitle(interaction) {
+  if (interaction.kind === "background") return "เกิดเองโดยไม่มีคลิก";
+  if (interaction.kind === "page_load") return `เปิดหน้า ${pathOf(interaction.page_url)}`;
+  const element = interaction.click.element;
+  const label = shorten(element.text || element.aria_label || element.selector, 40);
+  const title = `คลิก <${element.tag}> "${label}"`;
+  return interaction.navigated_to ? `${title} → เปลี่ยนหน้าไป ${pathOf(interaction.navigated_to)}` : title;
+}
+
+function renderExchangeRow(exchange) {
+  const li = document.createElement("li");
+  li.className = "exchange";
+  li.dataset.id = exchange.id;
+  li.append(
+    badge(exchange.request.method, `method-${exchange.request.method}`),
+    // LRM ครอบไว้ เพื่อไม่ให้ direction: rtl (ที่ใช้ตัด path จากซ้าย) ย้าย "/" ไปไว้ท้าย
+    textSpan("path", `\u200e${exchange.request.path}\u200e`, exchange.request.url),
+    redactionFlags(exchange),
+    statusBadge(exchange),
+    textSpan("ms", exchange.duration_ms == null ? "" : `${Math.round(exchange.duration_ms)} ms`),
+  );
+  return li;
+}
+
+function safeUrl(url) {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function pathOf(url) {
+  const parsed = safeUrl(url);
+  return parsed ? parsed.pathname + parsed.search : url;
+}
+
+function clockTime(epochMs) {
+  return new Date(epochMs).toLocaleTimeString("th-TH", { hour12: false });
+}
+
+function shorten(text, max) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
 /** จุดสถานะ Chrome ที่ top bar
@@ -104,7 +190,7 @@ class ChromeHelpView {
     const connected = status.chrome === "connected";
     if (connected) this.wasConnected = true;
     this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
-    this.setup.hidden = connected;
+    this.setup.hidden = connected || !status.chrome_launch_command; // โหมด --demo ไม่ต้องใช้ Chrome
     this.banner.hidden = connected || !this.wasConnected;
   }
 
@@ -169,7 +255,7 @@ function textSpan(className, text, title) {
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
   const timeline = new TimelineView(
-    document.getElementById("exchange-list"),
+    document.getElementById("timeline"),
     document.getElementById("timeline-empty"),
   );
   const status = new StatusView(document.getElementById("chrome-status"));
@@ -185,11 +271,13 @@ function main() {
 
   const handlers = {
     snapshot: (data) => {
-      timeline.reset(data.exchanges);
+      timeline.reset(data.interactions, data.exchanges);
       showStatus(data.status);
     },
-    "exchange.new": (data) => timeline.upsert(data),
-    "exchange.update": (data) => timeline.upsert(data),
+    "interaction.new": (data) => timeline.upsertInteraction(data),
+    "interaction.update": (data) => timeline.upsertInteraction(data),
+    "exchange.new": (data) => timeline.upsertExchange(data),
+    "exchange.update": (data) => timeline.upsertExchange(data),
     status: showStatus,
   };
 

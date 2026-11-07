@@ -31,6 +31,7 @@ def test_request_started_is_broadcast_as_pending_exchange(harness: Harness) -> N
     with harness.client.websocket_connect("/ws") as ws:
         harness.receive(ws)  # snapshot
         harness.feed(CART_GET)
+        harness.receive(ws)  # interaction.new (Background interaction ของแท็บ)
         message = harness.receive(ws)
 
     assert message["type"] == "exchange.new"
@@ -62,6 +63,7 @@ def test_response_completes_the_pending_exchange(harness: Harness) -> None:
                 body='{"status":"SUCCESS","data":[]}',
             ),
         )
+        harness.receive(ws)  # interaction.new (Background interaction ของแท็บ)
         new = harness.receive(ws)
         update = harness.receive(ws)
 
@@ -80,6 +82,7 @@ def test_failed_request_is_marked_failed_with_reason(harness: Harness) -> None:
     with harness.client.websocket_connect("/ws") as ws:
         harness.receive(ws)  # snapshot
         harness.feed(CART_GET, RequestFailed(request_key="r1", ts=1_000_050.0, failure="net::ERR_ABORTED"))
+        harness.receive(ws)  # interaction.new (Background interaction ของแท็บ)
         harness.receive(ws)  # exchange.new
         update = harness.receive(ws)
 

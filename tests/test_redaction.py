@@ -42,7 +42,7 @@ def test_no_secret_reaches_rest_or_websocket(harness: Harness) -> None:
     with harness.client.websocket_connect("/ws") as ws:
         harness.receive(ws)  # snapshot
         harness.feed(login_request())
-        broadcast = json.dumps(harness.receive(ws), ensure_ascii=False)
+        broadcast = json.dumps([harness.receive(ws), harness.receive(ws)], ensure_ascii=False)
     stored = json.dumps(harness.get("/api/exchanges/ex_0001"), ensure_ascii=False)
 
     for secret in [SESSION, BEARER, CSRF, PASSWORD, QUERY_TOKEN, PHONE]:

@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Res
 from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector
+from inspector.correlator import Correlator
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
 from inspector.store import EventStore
@@ -169,7 +170,9 @@ class LiveInspector:
     """Inspector ทั้งตัว (ไม่มี FastAPI) ที่ต่อกับ Chrome จริง"""
 
     def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
-        self.pipeline = InspectorPipeline(store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor())
+        self.pipeline = InspectorPipeline(
+            store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor(), correlator=Correlator()
+        )
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(
             cdp_url, on_context=capture.attach, on_status=self.pipeline.set_chrome_connected, retry_s=0.5

@@ -14,6 +14,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector, chrome_launch_command
+from inspector.correlator import Correlator
 from inspector.demo import feed_demo_events
 from inspector.pipeline import InspectorPipeline
 from inspector.redactor import Redactor
@@ -26,6 +27,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m inspector", description="Web Traffic Inspector")
     parser.add_argument("--port", type=int, default=8000, help="พอร์ตของหน้า Inspector (ค่าเริ่มต้น 8000)")
     parser.add_argument("--max-exchanges", type=int, default=500, help="จำนวน Exchange สูงสุดที่เก็บในหน่วยความจำ")
+    parser.add_argument(
+        "--window-ms", type=float, default=1500, help="Correlation window: ช่วงเวลาหลังคลิกที่นับ request เป็นผลของคลิก (ms)"
+    )
     parser.add_argument("--no-open", action="store_true", help="ไม่ต้องเปิดหน้า Inspector ในเบราว์เซอร์ให้อัตโนมัติ")
     parser.add_argument(
         "--cdp-url", default="http://127.0.0.1:9222", help="ที่อยู่ CDP ของ Chrome (ค่าเริ่มต้น http://127.0.0.1:9222)"
@@ -41,7 +45,8 @@ async def run(args: argparse.Namespace) -> None:
         store=store,
         broadcaster=broadcaster,
         redactor=Redactor(),
-        chrome_launch_command=chrome_launch_command(args.cdp_url),
+        correlator=Correlator(window_ms=args.window_ms),
+        chrome_launch_command="" if args.demo else chrome_launch_command(args.cdp_url),
     )
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=args.port, log_level="warning"))
