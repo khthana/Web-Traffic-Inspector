@@ -32,6 +32,9 @@ from inspector.redactor import Redactor
 from inspector.store import EventStore
 from inspector.summarizer import Summarizer
 
+# Capture event ที่เริ่มของใหม่ ถูกทิ้งระหว่าง Pause (คำตอบของ Exchange ที่ค้างอยู่และสถานะแท็บยังรับ)
+NEW_TRAFFIC = (RequestStarted, ClickCaptured, NavigationOccurred)
+
 
 class InspectorPipeline:
     """ต่อส่วนต่างๆ เข้าด้วยกัน: capture → redact → filter → correlate → summarize → store → broadcast
@@ -69,8 +72,8 @@ class InspectorPipeline:
 
     def handle(self, event: CaptureEvent) -> None:
         """รับ Capture event หนึ่งตัว (ต้องเรียกบน event loop ของ app)"""
-        if self.status.paused and isinstance(event, (RequestStarted, ClickCaptured, NavigationOccurred)):
-            return  # ระหว่าง Pause ไม่เก็บของใหม่ แต่คำตอบของ Exchange ที่ค้างอยู่และสถานะแท็บยังรับ
+        if self.status.paused and isinstance(event, NEW_TRAFFIC):
+            return
         if isinstance(event, RequestStarted):
             self._on_request(event)
         elif isinstance(event, ResponseReceived):

@@ -38,8 +38,24 @@ def inspector() -> Iterator[str]:
         request("c", "POST", "https://www.clarity.ms/collect", T0 + 30),  # ซ่อนอยู่: ↑/↓ ข้ามไป
     ):
         pipeline.handle(event)
-    with serve(create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)) as origin:
+    app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
+
+    @app.post("/test/chrome/connected")
+    async def chrome_connected() -> None:
+        """route สำหรับ test เท่านั้น: ทำเหมือน Chrome เพิ่งเชื่อมได้ (บน event loop ของ server)"""
+        pipeline.set_chrome_connected(True)
+
+    with serve(app) as origin:
         yield origin
+
+
+async def key(page: Page, selector: str, key: str, code: str, repeat: bool = False) -> None:
+    """ส่ง keydown ที่กำหนด key/code เองได้ (เช่นแป้นภาษาไทย: ปุ่ม C ได้ key เป็น "แ")"""
+    await page.eval_on_selector(
+        selector,
+        "(el, [key, code, repeat]) => el.dispatchEvent(new KeyboardEvent('keydown', {key, code, repeat, bubbles: true}))",
+        [key, code, repeat],
+    )
 
 
 async def selected(page: Page) -> str:
@@ -68,6 +84,8 @@ def test_buttons_and_shortcuts_control_capture(inspector: str) -> None:
             await page.keyboard.press("ArrowUp")
             assert "/api/cart" in await selected(page)
             assert "/api/cart" in (await page.text_content(".detail-url") or "")
+            await key(page, "#detail", "ArrowDown", "ArrowDown")  # ลูกศรในแผง Detail ใช้เลื่อนอ่าน ไม่เปลี่ยนแถว
+            assert "/api/cart" in await selected(page)
 
             # ปุ่มหยุด: แถบเหลืองและสถานะบอกว่าหยุดอยู่
             assert not await page.is_visible("#paused-banner")
@@ -75,7 +93,9 @@ def test_buttons_and_shortcuts_control_capture(inspector: str) -> None:
             await page.wait_for_selector("#paused-banner", state="visible")
             assert (await page.text_content("#paused-banner") or "").strip() == PAUSED_BANNER
             assert await page.text_content("#pause-toggle") == "เริ่มต่อ"
-            assert await page.text_content("#chrome-status .label") == "หยุดชั่วคราว"
+            assert await page.text_content("#chrome-status .label") == "ไม่พบ Chrome"  # Chrome หลุดสำคัญกว่า
+            await page.request.post(inspector + "/test/chrome/connected")
+            await page.wait_for_function("document.querySelector('#chrome-status .label').textContent === 'หยุดชั่วคราว'")
 
             # Space บน checkbox เป็นของ checkbox ไม่ใช่คีย์ลัด
             await page.focus("#follow-clicks")
@@ -88,9 +108,12 @@ def test_buttons_and_shortcuts_control_capture(inspector: str) -> None:
             await page.keyboard.press("Space")
             await page.wait_for_selector("#paused-banner", state="hidden")
             assert await page.text_content("#pause-toggle") == "หยุด"
+            await key(page, "body", " ", "Space", repeat=True)  # กด Space ค้าง: ไม่สลับไปมา
+            await page.wait_for_timeout(300)
+            assert not await page.is_visible("#paused-banner")
 
-            # C = ล้าง: Timeline, Detail และ Hidden count ว่าง
-            await page.keyboard.press("c")
+            # C = ล้าง แม้เปิดแป้นภาษาไทยอยู่: Timeline, Detail และ Hidden count ว่าง
+            await key(page, "body", "แ", "KeyC")
             await page.wait_for_selector(".exchange", state="detached")
             assert await page.is_visible("#timeline-empty")
             assert await page.text_content("#hidden-toggle") == "ซ่อน 0 รายการ"

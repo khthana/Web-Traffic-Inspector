@@ -254,12 +254,16 @@ class StatusView {
     this.element = element;
   }
 
+  /** Chrome หลุดสำคัญกว่าการหยุด (การหยุดยังเห็นจากแถบเหลือง) */
   show(status) {
-    const connected = status.chrome === "connected";
-    this.element.dataset.state = status.paused ? "paused" : status.chrome;
-    let label = connected ? `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ` : "ไม่พบ Chrome";
-    if (status.paused) label = "หยุดชั่วคราว";
-    this.element.querySelector(".label").textContent = label;
+    this.element.dataset.state = status.chrome;
+    this.element.dataset.paused = String(status.paused);
+    this.element.querySelector(".label").textContent = this.label(status);
+  }
+
+  label(status) {
+    if (status.chrome !== "connected") return "ไม่พบ Chrome";
+    return status.paused ? "หยุดชั่วคราว" : `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`;
   }
 }
 
@@ -789,8 +793,10 @@ class CaptureControls {
     this.banner.hidden = !status.paused;
   }
 
+  /** เปลี่ยน this.paused ทันที กดซ้ำเร็วๆ ก่อน status กลับมาจึงสลับถูกทาง (status จาก server ยืนยันอีกครั้ง) */
   togglePause() {
-    return fetch(this.paused ? "/api/resume" : "/api/pause", { method: "POST" });
+    this.paused = !this.paused;
+    return fetch(this.paused ? "/api/pause" : "/api/resume", { method: "POST" });
   }
 
   clear() {
@@ -799,23 +805,35 @@ class CaptureControls {
 }
 
 /** คีย์ลัดทั้งหน้า: ↑/↓ เลือก Exchange, Space หยุด/เริ่มต่อ, C ล้าง (ไม่ใช้ Ctrl+L เพราะชนกับเบราว์เซอร์)
- *  ช่องกรอก/checkbox/dropdown ใช้คีย์เองทั้งหมด ส่วนปุ่มใช้แค่ Space (กดปุ่มนั้น) คีย์ลัดจึงไม่แย่ง */
-function installShortcuts(timeline, controls) {
-  const actions = {
-    ArrowDown: () => timeline.moveSelection(1),
-    ArrowUp: () => timeline.moveSelection(-1),
-    " ": () => controls.togglePause(),
-    c: () => controls.clear(),
-    C: () => controls.clear(),
-  };
-  document.addEventListener("keydown", (event) => {
-    const action = actions[event.key];
-    const typing = event.target.closest?.("input, select, textarea, [contenteditable]");
-    const pressingButton = event.key === " " && event.target.closest?.("button, summary");
-    if (!action || typing || pressingButton || event.ctrlKey || event.metaKey || event.altKey) return;
+ *  ดูจาก event.code (ตำแหน่งปุ่ม) ไม่ใช่ event.key: เปิดแป้นภาษาไทยอยู่ ปุ่ม C ได้ key เป็น "แ" แต่ code ยังเป็น KeyC
+ *  สอนแนวคิด: lookup table แทน if/else — ปุ่มไหนทำอะไรอ่านได้จากตาราง this.actions ที่เดียว */
+class KeyboardShortcuts {
+  constructor(timeline, controls) {
+    this.actions = {
+      ArrowDown: () => timeline.moveSelection(1),
+      ArrowUp: () => timeline.moveSelection(-1),
+      Space: () => controls.togglePause(),
+      KeyC: () => controls.clear(),
+    };
+    document.addEventListener("keydown", (event) => this.handle(event));
+  }
+
+  handle(event) {
+    const action = this.actions[event.code];
+    if (!action || event.repeat || event.ctrlKey || event.metaKey || event.altKey || this.belongsToTarget(event)) return;
     event.preventDefault(); // ไม่ให้ Space/ลูกศรเลื่อนหน้าจอ
     action();
-  });
+  }
+
+  /** คีย์นี้เป็นของ element ที่โฟกัสอยู่: ช่องกรอก/checkbox/dropdown ใช้ทุกปุ่ม,
+   *  ปุ่มใช้ Space กดตัวเอง, แผง Detail ใช้ลูกศรเลื่อนอ่าน */
+  belongsToTarget(event) {
+    const target = event.target;
+    if (!target.closest) return false;
+    if (target.closest("input, select, textarea, [contenteditable]")) return true;
+    if (event.code === "Space" && target.closest("button, summary")) return true;
+    return event.code.startsWith("Arrow") && Boolean(target.closest("#detail"));
+  }
 }
 
 /** ประกอบทุกส่วนเข้าด้วยกัน */
@@ -842,7 +860,7 @@ function main() {
     document.getElementById("clear"),
     document.getElementById("paused-banner"),
   );
-  installShortcuts(timeline, controls);
+  new KeyboardShortcuts(timeline, controls);
   const filters = new FilterControls(document.getElementById("preset"), document.getElementById("custom-filters"));
   filters.load();
   const banner = document.getElementById("socket-banner");

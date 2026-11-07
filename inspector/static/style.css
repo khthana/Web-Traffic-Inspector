@@ -147,7 +147,7 @@ body {
 .hidden-note:empty { display: none; }
 .chrome-status .dot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--bad); }
 .chrome-status[data-state="connected"] .dot { background: var(--ok); }
-.chrome-status[data-state="paused"] .dot { background: var(--warn); }
+.chrome-status[data-state="connected"][data-paused="true"] .dot { background: var(--warn); }
 
 .banner { padding: .4rem 16px; background: var(--surface); color: var(--muted); border-bottom: 1px solid var(--line); }
 .banner-warn { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
