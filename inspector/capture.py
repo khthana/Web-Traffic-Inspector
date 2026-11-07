@@ -7,23 +7,21 @@
 import asyncio
 import codecs
 import time
-from collections.abc import Callable
 from email.message import Message
 from typing import Literal, cast
-from urllib.parse import urlsplit
 
 from playwright.async_api import BrowserContext, Page, Request, Response
 from playwright.async_api import Error as PlaywrightError
 
 from inspector.capture_events import (
-    CaptureEvent,
+    EventSink,
     RequestFailed,
     RequestStarted,
     ResponseReceived,
     TabChanged,
 )
 from inspector.click_tracker import ClickTracker
-from inspector.http_parts import header
+from inspector.http_parts import header, origin_of
 
 MAX_BODY_BYTES = 64 * 1024
 CAPTURED_TYPES = ("fetch", "xhr")
@@ -31,17 +29,8 @@ REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 IGNORED_SCHEMES = ("about:", "chrome:", "chrome-extension:", "devtools:", "chrome-untrusted:", "edge:")
 TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql")
 
-EventSink = Callable[[CaptureEvent], None]
-
-
 def now_ms() -> float:
     return time.time() * 1000
-
-
-def origin_of(url: str) -> str:
-    """origin = scheme + host + port เช่น http://127.0.0.1:8000"""
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}".lower()
 
 
 def is_inspector_url(url: str, inspector_origins: tuple[str, ...]) -> bool:
@@ -112,7 +101,7 @@ class TrafficCapture:
         self._started: dict[Request, asyncio.Task[str]] = {}
         self._next_tab = 0
         self._next_request = 0
-        self._clicks = ClickTracker(sink, inspector_origins, tab_of=self.watched_tab_id)
+        self._clicks = ClickTracker(sink, inspector_origins, tab_of=self.watched_tab_id, clock=now_ms)
 
     async def attach(self, context: BrowserContext) -> None:
         """เริ่มฟัง context นี้ รวมถึงแท็บที่จะเปิดใหม่ภายหลัง"""
@@ -131,7 +120,8 @@ class TrafficCapture:
     def watched_tab_id(self, page: Page) -> str | None:
         """tab_id ของแท็บนี้ ถ้าตอนนี้ไม่ใช่ Watched tab คืน None"""
         self._track_page(page)  # หน้าในแท็บใหม่อาจส่งคลิกมาก่อน event "page" ของ Playwright
-        return self._tab_ids[page] if is_watchable(page.url, self._origins) else None
+        tab_id = self._tab_ids.get(page)  # แท็บปิดไปแล้ว แต่คลิกที่ค้างท่อยังมาถึง
+        return tab_id if tab_id is not None and is_watchable(page.url, self._origins) else None
 
     def _track_page(self, page: Page) -> None:
         """จำทุกแท็บไว้ (แม้ยังไม่ใช่ Watched tab) เพราะแท็บอาจ navigate มาเป็น Watched tab ทีหลัง"""

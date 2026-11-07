@@ -58,6 +58,8 @@ def serve(app: FastAPI) -> Iterator[str]:
     deadline = time.time() + 10
     while not server.started and time.time() < deadline:
         time.sleep(0.05)
+    if not server.started:
+        raise RuntimeError("เว็บจำลองไม่ start ภายใน 10 วินาที")
     try:
         yield f"http://127.0.0.1:{port}"
     finally:

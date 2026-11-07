@@ -21,6 +21,7 @@ SHOP_PAGE = """<!doctype html>
   <button id="add" class="btn btn-cart primary extra" onclick="addToCart()">ใส่ตะกร้า</button>
 </div>
 <input id="pw" type="password" value="hunter2-secret">
+<div id="draft" contenteditable="true">secret-draft ที่กำลังพิมพ์</div>
 <button id="gallery">ดูรูปถัดไป</button>
 <button id="spa" onclick="goSpa()">ไปหน้า SPA</button>
 <a id="next" href="/next?token=SECRET">ถัดไป</a>
@@ -81,7 +82,7 @@ def paths_of(inspector: LiveInspector, interaction: dict[str, Any]) -> list[str]
     return [paths[x] for x in interaction["exchange_ids"] if x in paths]
 
 
-async def page_at(pages: list[Page], url: str) -> Page:
+def page_at(pages: list[Page], url: str) -> Page:
     return next(p for p in pages if p.url == url)
 
 
@@ -92,13 +93,14 @@ def test_clicks_on_a_real_page_become_click_interactions(chrome: ChromeProcess, 
         await wait_until(lambda: [t["url"] for t in inspector.status()["tabs"]] == [shop + "/"])
         async with async_playwright() as playwright:
             browser = await playwright.chromium.connect_over_cdp(chrome.cdp_url)
-            page = await page_at(browser.contexts[0].pages, shop + "/")
+            page = page_at(browser.contexts[0].pages, shop + "/")
 
             await page.click("#add")
             await wait_until(lambda: any(paths_of(inspector, c) == ["/api/cart/add"] for c in clicks(inspector)))
             assert await page.evaluate("document.body.dataset.added") == "yes"
 
             await page.click("#pw")
+            await page.click("#draft")
             await page.click("#gallery")
             await page.click("#spa")
             await wait_until(lambda: any(paths_of(inspector, c) == ["/api/spa-data"] for c in clicks(inspector)))
@@ -109,10 +111,10 @@ def test_clicks_on_a_real_page_become_click_interactions(chrome: ChromeProcess, 
             new_tab = await browser.contexts[0].new_page()  # แท็บใหม่ระหว่างใช้งาน
             await new_tab.goto(shop + "/")
             await new_tab.click("#add")
-            await wait_until(lambda: len(clicks(inspector)) == 6 and paths_of(inspector, clicks(inspector)[-1]) != [])
+            await wait_until(lambda: len(clicks(inspector)) == 7 and paths_of(inspector, clicks(inspector)[-1]) != [])
             await browser.close()
 
-        add, password, gallery, spa, link, add_in_new_tab = clicks(inspector)
+        add, password, draft, gallery, spa, link, add_in_new_tab = clicks(inspector)
 
         assert add["click"]["element"] == {
             "tag": "button", "text": "ใส่ตะกร้า", "aria_label": None, "element_id": "add",
@@ -122,7 +124,9 @@ def test_clicks_on_a_real_page_become_click_interactions(chrome: ChromeProcess, 
 
         assert password["click"]["element"]["tag"] == "input"
         assert password["click"]["element"]["text"] == ""
-        assert "hunter2" not in json.dumps(inspector.pipeline.snapshot())  # ไม่ส่งค่าใน input เด็ดขาด
+        assert draft["click"]["element"]["text"] == ""  # กล่องพิมพ์ข้อความแบบ rich text ก็เป็นค่าที่ผู้ใช้พิมพ์
+        snapshot = json.dumps(inspector.pipeline.snapshot(), ensure_ascii=False)
+        assert "hunter2" not in snapshot and "secret-draft" not in snapshot  # ไม่ส่งค่าที่พิมพ์เด็ดขาด
 
         assert gallery["exchange_ids"] == []
         assert gallery["click"]["element"]["selector"] == "button#gallery"

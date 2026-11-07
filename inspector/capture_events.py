@@ -7,6 +7,7 @@
 เวลาทุกตัวเป็น epoch milliseconds และมาพร้อม event เสมอ pipeline ไม่อ่านนาฬิกาเอง
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -83,3 +84,6 @@ class TabChanged:
 CaptureEvent = (
     RequestStarted | ResponseReceived | RequestFailed | ClickCaptured | NavigationOccurred | TabChanged
 )
+
+EventSink = Callable[[CaptureEvent], None]
+"""ปลายทางที่รับ Capture event (ปกติคือ InspectorPipeline.handle)"""

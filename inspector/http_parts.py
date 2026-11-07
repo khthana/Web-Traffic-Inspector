@@ -5,6 +5,12 @@ from urllib.parse import parse_qs, urlsplit
 from inspector.models import BodyKind
 
 
+def origin_of(url: str) -> str:
+    """origin = scheme + host + port เช่น http://127.0.0.1:8000"""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}".lower()
+
+
 def split_url(url: str) -> tuple[str, str, dict[str, list[str]]]:
     """แยก URL เป็น (host, path, query) — query หนึ่ง key มีได้หลายค่า"""
     parts = urlsplit(url)
