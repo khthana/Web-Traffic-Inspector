@@ -76,10 +76,10 @@ class TimelineView {
     this.onSelect(exchange, exchange ? this.interactions.get(exchange.interaction_id) ?? null : null, byUser);
   }
 
-  /** Exchange ของ Interaction หนึ่ง เรียงตามเวลาที่ request ออก */
-  exchangesOf(interactionId) {
+  /** Exchange ที่มองเห็นได้ (ไม่ถูกกรอง) ของ Interaction หนึ่ง เรียงตามเวลาที่ request ออก */
+  visibleExchangesOf(interactionId) {
     return [...this.exchanges.values()]
-      .filter((exchange) => exchange.interaction_id === interactionId)
+      .filter((exchange) => exchange.interaction_id === interactionId && !exchange.hidden)
       .sort((a, b) => a.started_at - b.started_at);
   }
 
@@ -121,11 +121,19 @@ class TimelineView {
   }
 }
 
-const KIND_ICONS = {
-  // เมาส์ = คลิก, เอกสาร = โหลดหน้า, นาฬิกา = เกิดเองเบื้องหลัง
-  click: '<rect x="4" y="1.5" width="8" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  page_load: '<path d="M4 1.5h5l3 3v10H4Zm5 0v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  background: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+/** ข้อมูลที่ขึ้นกับชนิดของ Interaction รวมไว้ที่เดียว
+ *  icon: เมาส์ = คลิก, เอกสาร = โหลดหน้า, นาฬิกา = เกิดเองเบื้องหลัง
+ *  notFromClick: คำอธิบายในแท็บ "คลิก (Event)" เมื่อ Exchange ไม่ได้เกิดจากคลิก */
+const INTERACTION_KINDS = {
+  click: { icon: '<rect x="4" y="1.5" width="8" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' },
+  page_load: {
+    notFromClick: "Exchange นี้ไม่ได้เกิดจากคลิก — เกิดตอนเบราว์เซอร์เปิดหน้าเว็บ",
+    icon: '<path d="M4 1.5h5l3 3v10H4Zm5 0v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  },
+  background: {
+    notFromClick: "Exchange นี้ไม่ได้เกิดจากคลิก — หน้าเว็บส่งเองเบื้องหลัง (เช่น polling)",
+    icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  },
 };
 
 function renderCard(interaction) {
@@ -167,7 +175,7 @@ function cardHead(interaction) {
   head.className = "card-head";
   const icon = document.createElement("span");
   icon.className = "card-icon";
-  icon.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" aria-hidden="true" focusable="false">${KIND_ICONS[interaction.kind]}</svg>`;
+  icon.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" aria-hidden="true" focusable="false">${INTERACTION_KINDS[interaction.kind].icon}</svg>`;
   const page = safeUrl(interaction.page_url);
   head.append(
     icon,
@@ -571,10 +579,6 @@ const DETAIL_TABS = [
   { id: "click", label: "คลิก (Event)", render: (view) => view.clickPanel() },
 ];
 
-const NOT_FROM_CLICK = {
-  page_load: "Exchange นี้ไม่ได้เกิดจากคลิก — เกิดตอนเบราว์เซอร์เปิดหน้าเว็บ",
-  background: "Exchange นี้ไม่ได้เกิดจากคลิก — หน้าเว็บส่งเองเบื้องหลัง (เช่น polling)",
-};
 
 /** ขาออกและขาเข้าหน้าตาเหมือนกัน: บรรทัดแรก + headers + body */
 function messagePanel(firstLine, part) {
@@ -673,10 +677,10 @@ class DetailView {
   clickPanel() {
     const click = this.interaction?.click;
     if (!click) {
-      return [el("p", "body-note", NOT_FROM_CLICK[this.interaction?.kind] ?? "Exchange นี้ไม่ได้เกิดจากคลิก")];
+      return [el("p", "body-note", INTERACTION_KINDS[this.interaction?.kind]?.notFromClick ?? "Exchange นี้ไม่ได้เกิดจากคลิก")];
     }
     const element = click.element;
-    return [el("dl", "click-info",
+    return [el("dl", "field-list click-info",
       definitionRow("element", el("code", "click-tag", `<${element.tag}>`)),
       definitionRow("ข้อความ", el("span", "click-text", element.text || element.aria_label || "—")),
       definitionRow("selector", el("code", "click-selector", element.selector)),
@@ -693,7 +697,7 @@ class DetailView {
       "section",
       "side side-request",
       el("h3", null, "ขาออก (Request)"),
-      el("dl", null, definitionRow("method", methodBadge(request.method)), definitionRow("path", el("code", null, request.path)),
+      el("dl", "field-list", definitionRow("method", methodBadge(request.method)), definitionRow("path", el("code", null, request.path)),
         definitionRow("query", query.length ? keyValueTable("query-table", query) : "—")),
       el("h4", null, "body"),
       bodyView(request),
@@ -708,7 +712,7 @@ class DetailView {
       return side;
     }
     side.append(
-      el("dl", null, definitionRow("status", statusBadge(this.exchange), ` ${response.status_text}`),
+      el("dl", "field-list", definitionRow("status", statusBadge(this.exchange), ` ${response.status_text}`),
         definitionRow("content-type", el("code", null, contentType(response.headers)))),
       el("h4", null, "body"),
       bodyView(response),
@@ -719,24 +723,33 @@ class DetailView {
 
 /** "ตามคลิกล่าสุด": เมื่อมีคลิกใหม่ เลือก Exchange หลักของคลิกนั้นให้ ผู้สอนไม่ต้องสลับหน้าต่างมากด
  *  Exchange หลัก = ตัวแรกที่มองเห็นและไม่ใช่ GET (ส่วนใหญ่คือ action เช่นใส่ตะกร้า) ไม่มีก็ใช้ตัวแรกที่มองเห็น
- *  สอนแนวคิด: single responsibility — รู้แค่ "ควรเลือกอะไร" ส่วนการเลือกและแสดงผลเป็นงานของ TimelineView/DetailView */
+ *  Hidden exchange (tracking, นอกโฟกัส) ไม่ถูกเลือกเลย แม้จะเปิดปุ่ม "ซ่อน N รายการ" อยู่ เพราะไม่ใช่สิ่งที่สอน
+ *  สอนแนวคิด: single responsibility — รู้แค่ "ควรเลือกอะไร" ส่วนการเก็บแถวและวาด Detail เป็นงานของ TimelineView/DetailView */
 class ClickFollower {
   constructor(timeline, checkbox) {
     this.timeline = timeline;
     this.checkbox = checkbox;
-    this.clickId = null; // คลิกที่กำลังรอ Exchange หลักอยู่
+    this.clickInteractionId = null; // Click interaction ที่กำลังรอ Exchange หลักอยู่
     checkbox.addEventListener("change", () => { if (!checkbox.checked) this.stop(); });
   }
 
   onNewInteraction(interaction) {
-    if (interaction.kind === "click" && this.checkbox.checked) this.clickId = interaction.id;
+    if (interaction.kind === "click" && this.checkbox.checked) this.clickInteractionId = interaction.id;
+  }
+
+  onExchange(exchange) {
+    if (exchange.interaction_id === this.clickInteractionId) this.choose();
+  }
+
+  /** snapshot ใหม่ (เช่นเปลี่ยน Preset) อาจทำให้ Exchange ที่เคยซ่อนกลับมามองเห็น: เลือกใหม่ */
+  onSnapshot() {
+    if (this.clickInteractionId !== null) this.choose();
   }
 
   /** Exchange ทยอยมาทีละตัว: เลือกตัวแรกที่มองเห็นไว้ก่อน แล้วเปลี่ยนเป็นตัวที่ไม่ใช่ GET เมื่อมาถึง */
-  onExchange(exchange) {
-    if (this.clickId === null || exchange.interaction_id !== this.clickId) return;
-    const visible = this.timeline.exchangesOf(this.clickId).filter((candidate) => !candidate.hidden);
-    const main = visible.find((candidate) => candidate.request.method !== "GET");
+  choose() {
+    const visible = this.timeline.visibleExchangesOf(this.clickInteractionId);
+    const main = visible.find((exchange) => exchange.request.method !== "GET");
     const choice = main ?? visible[0];
     if (choice && choice.id !== this.timeline.selectedId) this.timeline.select(choice.id);
     if (main) this.stop(); // ได้ Exchange หลักแล้ว ตัวที่มาทีหลังไม่ต้องแย่ง
@@ -744,23 +757,23 @@ class ClickFollower {
 
   /** ผู้สอนเลือกเองหรือปิด checkbox: เลิกตามคลิกนี้ */
   stop() {
-    this.clickId = null;
+    this.clickInteractionId = null;
   }
 }
 
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
   const detail = new DetailView(document.getElementById("detail"));
-  let follower = null;
+  // callback นี้ถูกเรียกตอนผู้ใช้เลือกแถว ซึ่งเกิดหลังสร้าง follower (บรรทัดถัดไป) เสร็จแล้วเสมอ
   const timeline = new TimelineView(
     document.getElementById("timeline"),
     document.getElementById("timeline-empty"),
     (exchange, interaction, byUser) => {
-      if (byUser) follower.stop();
+      if (byUser) follower.stop(); // ผู้สอนเลือกเอง: โปรแกรมไม่แย่ง
       detail.show(exchange, interaction);
     },
   );
-  follower = new ClickFollower(timeline, document.getElementById("follow-clicks"));
+  const follower = new ClickFollower(timeline, document.getElementById("follow-clicks"));
   const status = new StatusView(document.getElementById("chrome-status"));
   const chromeHelp = new ChromeHelpView(
     document.getElementById("chrome-setup"),
@@ -779,9 +792,15 @@ function main() {
     document.documentElement.style.setProperty("--correlation-window", `${data.correlation_window_ms}ms`);
   };
 
+  const showExchange = (data) => {
+    timeline.upsertExchange(data);
+    follower.onExchange(data);
+  };
+
   const handlers = {
     snapshot: (data) => {
       timeline.reset(data.interactions, data.exchanges);
+      follower.onSnapshot();
       showStatus(data.status);
     },
     "interaction.new": (data) => {
@@ -789,14 +808,8 @@ function main() {
       follower.onNewInteraction(data);
     },
     "interaction.update": (data) => timeline.upsertInteraction(data),
-    "exchange.new": (data) => {
-      timeline.upsertExchange(data);
-      follower.onExchange(data);
-    },
-    "exchange.update": (data) => {
-      timeline.upsertExchange(data);
-      follower.onExchange(data);
-    },
+    "exchange.new": showExchange,
+    "exchange.update": showExchange,
     status: showStatus,
   };
 

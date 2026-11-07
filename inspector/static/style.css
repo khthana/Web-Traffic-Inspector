@@ -303,11 +303,11 @@ body {
 .overview { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .side { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 0; }
 .side h3 { margin-top: 0; }
-.side dl, .click-info { margin: 0; }
-.side .field, .click-info .field { display: grid; grid-template-columns: 7.5em 1fr; gap: .5rem; padding: .15rem 0; }
-.side dt, .click-info dt { color: var(--muted); }
-.click-info .field { grid-template-columns: 11em 1fr; }
-.side dd, .click-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.field-list { margin: 0; }
+.field-list .field { display: grid; grid-template-columns: 7.5em 1fr; gap: .5rem; padding: .15rem 0; }
+.field-list dt { color: var(--muted); }
+.click-info .field { grid-template-columns: 11em 1fr; }  /* ป้าย "คลิก → request ออก" ยาวกว่า */
+.field-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 .kv-table { border-collapse: collapse; width: 100%; font-size: .9em; }
 .kv-table th, .kv-table td {

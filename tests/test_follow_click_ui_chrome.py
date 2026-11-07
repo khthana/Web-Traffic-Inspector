@@ -31,7 +31,7 @@ def click(text: str, ts: float) -> ClickCaptured:
     return ClickCaptured(tab_id="tab-1", page_url=PAGE, ts=ts, element=element)
 
 
-T1, T2, T3 = T0 + 10_000, T0 + 20_000, T0 + 30_000
+T1, T2, T3, T4, T5 = T0 + 10_000, T0 + 20_000, T0 + 30_000, T0 + 40_000, T0 + 50_000
 STEPS: dict[str, list[CaptureEvent]] = {
     "buy": [
         click("ใส่ตะกร้า", T1),
@@ -46,6 +46,8 @@ STEPS: dict[str, list[CaptureEvent]] = {
         request("w2", "GET", f"{API}/banner", T2 + 40),
     ],
     "wish": [click("ถูกใจ", T3), request("h1", "POST", f"{API}/wish", T3 + 10)],
+    "track-only": [click("ดูรูปถัดไป", T4), request("t1", "POST", "https://www.clarity.ms/collect", T4 + 10)],
+    "late-buy": [click("ซื้อเลย", T5), request("l1", "POST", f"{API}/buy", T5 + 10)],
 }
 
 
@@ -69,7 +71,8 @@ def inspector() -> Iterator[str]:
 
 
 async def selected_path(page: Page, path: str) -> None:
-    await page.wait_for_selector(f'.exchange[aria-selected=true]:has-text("{path}")')
+    # attached: แถวที่เลือกอาจถูกซ่อนตาม Preset อยู่ แต่ยังเป็นตัวที่เลือก
+    await page.wait_for_selector(f'.exchange[aria-selected=true]:has-text("{path}")', state="attached")
 
 
 def test_detail_follows_the_latest_click(inspector: str) -> None:
@@ -109,11 +112,26 @@ def test_detail_follows_the_latest_click(inspector: str) -> None:
             await selected_path(page, "/api/products")
             assert await page.text_content(".click-delay") == "30 ms"
 
+            # คลิกที่มีแต่ tracking (ซ่อนอยู่): ไม่เลือกอะไรที่ผู้ชมมองไม่เห็น Detail คงเดิม
+            await page.request.post(inspector + "/test/feed/track-only")
+            await page.wait_for_selector('.card:has-text("ดูรูปถัดไป") .exchange.is-hidden', state="attached")
+            await selected_path(page, "/api/products")
+
+            # Preset advice ซ่อน shop.example: คลิกนี้ยังไม่มีอะไรให้เลือก
+            # เปลี่ยนกลับเป็น "ทุกเว็บ" (snapshot ใหม่) แล้ว POST ที่เพิ่งมองเห็นต้องถูกเลือก
+            await page.select_option("#preset", "advice")
+            await page.wait_for_selector('.exchange.is-hidden:has-text("/api/products")', state="attached")
+            await page.request.post(inspector + "/test/feed/late-buy")
+            await page.wait_for_selector('.exchange.is-hidden:has-text("/api/buy")', state="attached")
+            await selected_path(page, "/api/products")
+            await page.select_option("#preset", "all")
+            await selected_path(page, "/api/buy")
+
             # ปิด "ตามคลิกล่าสุด": คลิกใหม่ไม่เปลี่ยน Exchange ที่เลือก
             await page.uncheck("#follow-clicks")
             await page.request.post(inspector + "/test/feed/wish")
             await page.wait_for_selector('.exchange:has-text("/api/wish")')
-            await selected_path(page, "/api/products")
+            await selected_path(page, "/api/buy")
             await browser.close()
 
     asyncio.run(scenario())
