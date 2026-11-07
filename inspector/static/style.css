@@ -303,10 +303,11 @@ body {
 .overview { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .side { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 0; }
 .side h3 { margin-top: 0; }
-.side dl { margin: 0; }
-.side .field { display: grid; grid-template-columns: 7.5em 1fr; gap: .5rem; padding: .15rem 0; }
-.side dt { color: var(--muted); }
-.side dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.side dl, .click-info { margin: 0; }
+.side .field, .click-info .field { display: grid; grid-template-columns: 7.5em 1fr; gap: .5rem; padding: .15rem 0; }
+.side dt, .click-info dt { color: var(--muted); }
+.click-info .field { grid-template-columns: 11em 1fr; }
+.side dd, .click-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 .kv-table { border-collapse: collapse; width: 100%; font-size: .9em; }
 .kv-table th, .kv-table td {
@@ -363,6 +364,9 @@ body {
   color: var(--muted);
   font: .85em var(--font);
 }
+
+.tool-check { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; cursor: pointer; }
+.tool-check input { width: 1.1em; height: 1.1em; }
 
 @media (max-width: 900px) {
   .layout { flex-direction: column; }

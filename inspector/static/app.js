@@ -38,6 +38,7 @@ class TimelineView {
     this.cards = new Map(); // interaction id → <li class="card">
     this.rows = new Map(); // exchange id → <li class="exchange">
     this.exchanges = new Map(); // exchange id → ข้อมูลล่าสุดของ Exchange
+    this.interactions = new Map(); // interaction id → ข้อมูลล่าสุดของ Interaction
     this.selectedId = null;
     listElement.addEventListener("click", (event) => this.selectRow(event.target));
     // Enter เท่านั้น: Space สงวนไว้ให้ "หยุด/เริ่มต่อ" (SPEC 6.3)
@@ -51,6 +52,7 @@ class TimelineView {
     this.cards.clear();
     this.rows.clear();
     this.exchanges.clear();
+    this.interactions.clear();
     interactions.forEach((interaction) => this.upsertInteraction(interaction, false));
     exchanges.forEach((exchange) => this.upsertExchange(exchange));
     if (!this.exchanges.has(this.selectedId)) this.select(null); // Exchange ที่เลือกไว้ถูกตัดออกจาก store แล้ว
@@ -59,18 +61,31 @@ class TimelineView {
 
   selectRow(target) {
     const row = target.closest(".exchange");
-    if (row) this.select(row.dataset.id);
+    if (row) this.select(row.dataset.id, true);
   }
 
-  select(id) {
+  /** byUser = ผู้สอนเลือกเอง (คลิก/Enter) ไม่ใช่โปรแกรมเลือกให้ */
+  select(id, byUser = false) {
     this.rows.get(this.selectedId)?.setAttribute("aria-selected", "false");
     this.selectedId = id;
     this.rows.get(id)?.setAttribute("aria-selected", "true");
-    this.onSelect(this.exchanges.get(id) ?? null);
+    this.notify(this.exchanges.get(id) ?? null, byUser);
+  }
+
+  notify(exchange, byUser = false) {
+    this.onSelect(exchange, exchange ? this.interactions.get(exchange.interaction_id) ?? null : null, byUser);
+  }
+
+  /** Exchange ของ Interaction หนึ่ง เรียงตามเวลาที่ request ออก */
+  exchangesOf(interactionId) {
+    return [...this.exchanges.values()]
+      .filter((exchange) => exchange.interaction_id === interactionId)
+      .sort((a, b) => a.started_at - b.started_at);
   }
 
   /** การ์ดใหม่ขึ้นบนสุดพร้อมไฮไลต์ การ์ดเดิมเปลี่ยนแค่หัวการ์ด ไม่ย้ายตำแหน่ง */
   upsertInteraction(interaction, highlight = true) {
+    this.interactions.set(interaction.id, interaction);
     const existing = this.cards.get(interaction.id);
     if (existing) {
       existing.querySelector(".card-head").replaceWith(cardHead(interaction));
@@ -98,7 +113,7 @@ class TimelineView {
     }
     this.rows.set(exchange.id, row);
     refreshCard(card);
-    if (exchange.id === this.selectedId) this.onSelect(exchange); // ได้คำตอบแล้ว: Detail ต้องเห็นข้อมูลใหม่
+    if (exchange.id === this.selectedId) this.notify(exchange); // ได้คำตอบแล้ว: Detail ต้องเห็นข้อมูลใหม่
   }
 
   updateEmpty() {
@@ -553,7 +568,13 @@ const DETAIL_TABS = [
   { id: "request", label: "ขาออก (Request)", render: (view) => view.requestPanel() },
   { id: "response", label: "ขาเข้า (Response)", render: (view) => view.responsePanel() },
   { id: "raw", label: "ดิบ (Raw)", render: (view) => view.rawPanel() },
+  { id: "click", label: "คลิก (Event)", render: (view) => view.clickPanel() },
 ];
+
+const NOT_FROM_CLICK = {
+  page_load: "Exchange นี้ไม่ได้เกิดจากคลิก — เกิดตอนเบราว์เซอร์เปิดหน้าเว็บ",
+  background: "Exchange นี้ไม่ได้เกิดจากคลิก — หน้าเว็บส่งเองเบื้องหลัง (เช่น polling)",
+};
 
 /** ขาออกและขาเข้าหน้าตาเหมือนกัน: บรรทัดแรก + headers + body */
 function messagePanel(firstLine, part) {
@@ -573,13 +594,16 @@ class DetailView {
     this.element = element;
     this.tab = "overview";
     this.exchange = null;
+    this.interaction = null; // Interaction ที่ Exchange นี้อยู่ (ใช้ในแท็บคลิก)
     this.render();
   }
 
   /** snapshot หรือ update ที่ไม่เปลี่ยนสิ่งที่ Detail แสดงจะไม่วาดใหม่ โหนด JSON ที่กางไว้และโหมดดิบจึงไม่หาย */
-  show(exchange) {
-    if (exchange && this.exchange && shownPart(exchange) === shownPart(this.exchange)) return;
+  show(exchange, interaction = null) {
+    if (exchange && this.exchange && shownPart(exchange) === shownPart(this.exchange)
+      && interaction?.id === this.interaction?.id) return;
     this.exchange = exchange;
+    this.interaction = interaction;
     this.render();
   }
 
@@ -646,6 +670,22 @@ class DetailView {
     ];
   }
 
+  clickPanel() {
+    const click = this.interaction?.click;
+    if (!click) {
+      return [el("p", "body-note", NOT_FROM_CLICK[this.interaction?.kind] ?? "Exchange นี้ไม่ได้เกิดจากคลิก")];
+    }
+    const element = click.element;
+    return [el("dl", "click-info",
+      definitionRow("element", el("code", "click-tag", `<${element.tag}>`)),
+      definitionRow("ข้อความ", el("span", "click-text", element.text || element.aria_label || "—")),
+      definitionRow("selector", el("code", "click-selector", element.selector)),
+      element.href ? definitionRow("ลิงก์ไป", el("code", null, element.href)) : null,
+      definitionRow("คลิกเมื่อ", clockTime(click.ts)),
+      definitionRow("คลิก → request ออก", el("span", "click-delay", `${Math.round(this.exchange.started_at - click.ts)} ms`)),
+    )];
+  }
+
   requestSide() {
     const request = this.exchange.request;
     const query = Object.entries(request.query).flatMap(([key, values]) => values.map((value) => [key, value]));
@@ -677,14 +717,50 @@ class DetailView {
   }
 }
 
+/** "ตามคลิกล่าสุด": เมื่อมีคลิกใหม่ เลือก Exchange หลักของคลิกนั้นให้ ผู้สอนไม่ต้องสลับหน้าต่างมากด
+ *  Exchange หลัก = ตัวแรกที่มองเห็นและไม่ใช่ GET (ส่วนใหญ่คือ action เช่นใส่ตะกร้า) ไม่มีก็ใช้ตัวแรกที่มองเห็น
+ *  สอนแนวคิด: single responsibility — รู้แค่ "ควรเลือกอะไร" ส่วนการเลือกและแสดงผลเป็นงานของ TimelineView/DetailView */
+class ClickFollower {
+  constructor(timeline, checkbox) {
+    this.timeline = timeline;
+    this.checkbox = checkbox;
+    this.clickId = null; // คลิกที่กำลังรอ Exchange หลักอยู่
+    checkbox.addEventListener("change", () => { if (!checkbox.checked) this.stop(); });
+  }
+
+  onNewInteraction(interaction) {
+    if (interaction.kind === "click" && this.checkbox.checked) this.clickId = interaction.id;
+  }
+
+  /** Exchange ทยอยมาทีละตัว: เลือกตัวแรกที่มองเห็นไว้ก่อน แล้วเปลี่ยนเป็นตัวที่ไม่ใช่ GET เมื่อมาถึง */
+  onExchange(exchange) {
+    if (this.clickId === null || exchange.interaction_id !== this.clickId) return;
+    const visible = this.timeline.exchangesOf(this.clickId).filter((candidate) => !candidate.hidden);
+    const main = visible.find((candidate) => candidate.request.method !== "GET");
+    const choice = main ?? visible[0];
+    if (choice && choice.id !== this.timeline.selectedId) this.timeline.select(choice.id);
+    if (main) this.stop(); // ได้ Exchange หลักแล้ว ตัวที่มาทีหลังไม่ต้องแย่ง
+  }
+
+  /** ผู้สอนเลือกเองหรือปิด checkbox: เลิกตามคลิกนี้ */
+  stop() {
+    this.clickId = null;
+  }
+}
+
 /** ประกอบทุกส่วนเข้าด้วยกัน */
 function main() {
   const detail = new DetailView(document.getElementById("detail"));
+  let follower = null;
   const timeline = new TimelineView(
     document.getElementById("timeline"),
     document.getElementById("timeline-empty"),
-    (exchange) => detail.show(exchange),
+    (exchange, interaction, byUser) => {
+      if (byUser) follower.stop();
+      detail.show(exchange, interaction);
+    },
   );
+  follower = new ClickFollower(timeline, document.getElementById("follow-clicks"));
   const status = new StatusView(document.getElementById("chrome-status"));
   const chromeHelp = new ChromeHelpView(
     document.getElementById("chrome-setup"),
@@ -708,10 +784,19 @@ function main() {
       timeline.reset(data.interactions, data.exchanges);
       showStatus(data.status);
     },
-    "interaction.new": (data) => timeline.upsertInteraction(data),
+    "interaction.new": (data) => {
+      timeline.upsertInteraction(data);
+      follower.onNewInteraction(data);
+    },
     "interaction.update": (data) => timeline.upsertInteraction(data),
-    "exchange.new": (data) => timeline.upsertExchange(data),
-    "exchange.update": (data) => timeline.upsertExchange(data),
+    "exchange.new": (data) => {
+      timeline.upsertExchange(data);
+      follower.onExchange(data);
+    },
+    "exchange.update": (data) => {
+      timeline.upsertExchange(data);
+      follower.onExchange(data);
+    },
     status: showStatus,
   };
 
