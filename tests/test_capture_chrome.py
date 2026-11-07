@@ -48,11 +48,16 @@ FIXTURE_PAGE = """<!doctype html>
   fetch('/api/binary');
   fetch('/api/big');
   const xhr = new XMLHttpRequest(); xhr.open('GET', '/api/xhr'); xhr.send();
-  fetch('http://127.0.0.1:9/nothing').catch(() => {});
+  fetch('/api/tis620');
+  fetch('http://127.0.0.1:1/nothing').catch(() => {});
+  fetch('http://127.0.0.1:9/inspector-api').catch(() => {});  // origin ของ Inspector เอง
 </script>
 </body></html>"""
 
-BIG_BYTES = 100 * 1024
+BIG_TEXT = "ก" * 40_000  # ตัวไทย 3 byte: ตัดที่ 64 KB จะตกกลางตัวอักษร
+BIG_BYTES = len(BIG_TEXT.encode("utf-8"))
+KEPT_BYTES = (64 * 1024 // 3) * 3
+INSPECTOR_ORIGIN = "http://127.0.0.1:9"
 
 
 def free_port() -> int:
@@ -87,7 +92,11 @@ def fixture_app() -> FastAPI:
 
     @app.get("/api/big")
     def big_api() -> PlainTextResponse:
-        return PlainTextResponse("x" * BIG_BYTES)
+        return PlainTextResponse(BIG_TEXT)
+
+    @app.get("/api/tis620")
+    def tis620_api() -> Response:
+        return Response("สวัสดี".encode("cp874"), media_type="text/plain; charset=windows-874")
 
     @app.get("/api/xhr")
     def xhr_api() -> JSONResponse:
@@ -159,7 +168,7 @@ def chrome() -> Iterator[ChromeProcess]:
 class LiveInspector:
     """Inspector ทั้งตัว (ไม่มี FastAPI) ที่ต่อกับ Chrome จริง"""
 
-    def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = ("http://127.0.0.1:1",)) -> None:
+    def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
         self.pipeline = InspectorPipeline(store=EventStore(), broadcaster=Broadcaster(), redactor=Redactor())
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(
@@ -200,17 +209,21 @@ def test_fetch_and_xhr_from_a_new_tab_are_captured(chrome: ChromeProcess, site: 
     async def scenario(inspector: LiveInspector) -> None:
         await wait_until(lambda: inspector.status()["chrome"] == "connected")
         chrome.open_tab(site + "/")  # แท็บเปิดใหม่ระหว่างใช้งาน
-        await wait_until(lambda: len([e for e in inspector.exchanges() if e["state"] != "pending"]) >= 6)
+        await wait_until(lambda: len([e for e in inspector.exchanges() if e["state"] != "pending"]) >= 7)
 
         by_path = {e["request"]["path"]: e for e in inspector.exchanges()}
-        assert set(by_path) == {"/api/json", "/api/form", "/api/binary", "/api/big", "/api/xhr", "/nothing"}
+        assert set(by_path) == {
+            "/api/json", "/api/form", "/api/binary", "/api/big", "/api/xhr", "/api/tis620", "/nothing"
+        }  # ไม่มีรูปภาพ และไม่มี request ไปหา Inspector
 
         assert by_path["/api/json"]["response"]["body_kind"] == "json"
         assert by_path["/api/xhr"]["resource_type"] == "xhr"
         assert by_path["/api/form"]["request"]["body"] == "user=somchai&password=••••"
         assert by_path["/api/binary"]["response"]["body"] is None
         assert by_path["/api/binary"]["response"]["body_error"].startswith("เป็นไฟล์ binary (application/x-protobuf")
-        assert by_path["/api/big"]["response"]["body_truncated_bytes"] == BIG_BYTES - 64 * 1024
+        assert by_path["/api/big"]["response"]["body"] == BIG_TEXT[: KEPT_BYTES // 3]
+        assert by_path["/api/big"]["response"]["body_truncated_bytes"] == BIG_BYTES - KEPT_BYTES
+        assert by_path["/api/tis620"]["response"]["body"] == "สวัสดี"
         assert by_path["/nothing"]["state"] == "failed"
         assert by_path["/nothing"]["failure"]
         assert [t["url"] for t in inspector.status()["tabs"]] == [site + "/"]
@@ -229,7 +242,7 @@ def test_inspector_own_tab_is_not_watched(chrome: ChromeProcess, site: str) -> N
         assert inspector.exchanges() == []
         assert inspector.status()["tabs"] == []
 
-    run_live(chrome.cdp_url, scenario, inspector_origins=(site,))
+    run_live(chrome.cdp_url, scenario, inspector_origins=(site + "/",))  # origin เดียวกัน แม้เขียนต่างกัน
 
 
 def test_reconnects_after_chrome_restarts(chrome: ChromeProcess, site: str) -> None:

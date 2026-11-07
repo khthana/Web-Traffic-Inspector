@@ -90,8 +90,8 @@ class StatusView {
   }
 }
 
-/** บอกวิธีเปิด Chrome (ตอนยังไม่เคยเชื่อม) และแถบเหลืองเมื่อ Chrome หลุดกลางคาบ
- *  สอนแนวคิด: state ใน object — จำว่า "เคยเชื่อมสำเร็จแล้วหรือยัง" เพื่อเลือกข้อความที่เหมาะ */
+/** บอกวิธีเปิด Chrome ทุกครั้งที่ไม่ได้เชื่อม และแถบเหลืองเมื่อ Chrome หลุดกลางคาบ
+ *  สอนแนวคิด: state ใน object — จำว่า "เคยเชื่อมสำเร็จแล้วหรือยัง" เพื่อรู้ว่าควรเตือนว่าหลุดไหม */
 class ChromeHelpView {
   constructor(setupElement, bannerElement) {
     this.setup = setupElement;
@@ -104,9 +104,7 @@ class ChromeHelpView {
     const connected = status.chrome === "connected";
     if (connected) this.wasConnected = true;
     this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
-    const port = status.chrome_launch_command.match(/--remote-debugging-port=(\d+)/);
-    this.setup.querySelector("#chrome-port").textContent = port ? port[1] : "9222";
-    this.setup.hidden = connected || this.wasConnected;
+    this.setup.hidden = connected;
     this.banner.hidden = connected || !this.wasConnected;
   }
 

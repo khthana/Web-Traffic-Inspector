@@ -51,7 +51,7 @@ async def run(args: argparse.Namespace) -> None:
         background.append(asyncio.create_task(feed_demo_events(pipeline)))
     else:
         # หน้า Inspector เองไม่ใช่ Watched tab (กันไม่ให้ดัก traffic ของตัวเอง)
-        own_origins = (f"http://127.0.0.1:{args.port}", f"http://localhost:{args.port}")
+        own_origins = tuple(f"http://{host}:{args.port}" for host in ("127.0.0.1", "localhost", "[::1]"))
         capture = TrafficCapture(sink=pipeline.handle, inspector_origins=own_origins)
         connector = ChromeConnector(args.cdp_url, on_context=capture.attach, on_status=pipeline.set_chrome_connected)
         background.append(asyncio.create_task(connector.run()))

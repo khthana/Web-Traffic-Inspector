@@ -5,25 +5,31 @@
 """
 
 import asyncio
+import logging
 import platform
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
 
+log = logging.getLogger(__name__)
+
 ContextHandler = Callable[[BrowserContext], Awaitable[None]]
 StatusHandler = Callable[[bool], None]
 
 
 def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
-    """คำสั่งเปิด Chrome โหมด debug ตาม OS (ใช้โปรไฟล์แยก เพราะ Chrome 136+ บังคับ)"""
+    """คำสั่งเปิด Chrome โหมด debug ตาม OS (ใช้โปรไฟล์แยก เพราะ Chrome 136+ บังคับ)
+
+    Windows ใช้รูปแบบของ PowerShell ซึ่งเป็น terminal เริ่มต้นของ Windows 11
+    """
     port = urlsplit(cdp_url).port or 9222
     flags = f"--remote-debugging-port={port} --remote-debugging-address=127.0.0.1 --no-first-run"
     system = system or platform.system()
     if system == "Windows":
         return (
-            r'"C:\Program Files\Google\Chrome\Application\chrome.exe" '
-            rf'{flags} --user-data-dir="%LOCALAPPDATA%\TrafficInspectorProfile" https://www.advice.co.th'
+            r'& "C:\Program Files\Google\Chrome\Application\chrome.exe" '
+            rf'{flags} --user-data-dir="$env:LOCALAPPDATA\TrafficInspectorProfile" https://www.advice.co.th'
         )
     if system == "Darwin":
         return (
@@ -34,7 +40,10 @@ def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
 
 
 class ChromeConnector:
-    """วนเชื่อม Chrome ทุก `retry_s` วินาที จนกว่าจะถูกยกเลิก"""
+    """วนเชื่อม Chrome ทุก `retry_s` วินาที จนกว่าจะถูกยกเลิก
+
+    สอนแนวคิด: callback — แจ้งสถานะผ่าน `on_status` และส่ง context ให้ `on_context` โดยไม่ต้องรู้ว่าใครใช้
+    """
 
     def __init__(
         self,
@@ -67,11 +76,18 @@ class ChromeConnector:
         disconnected = asyncio.Event()
         browser.on("disconnected", lambda _: disconnected.set())
         try:
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            if not browser.contexts:
+                log.warning("Chrome ไม่มีหน้าต่างที่ใช้โปรไฟล์ปกติ จะลองใหม่")
+                return
             self._on_status(True)
-            await self._on_context(context)
+            await self._on_context(browser.contexts[0])
             await disconnected.wait()
         except Exception:
-            pass  # หลุดระหว่างตั้งค่า: ถือว่าหลุด แล้วลองใหม่
+            log.exception("ตั้งค่าการดัก traffic ไม่สำเร็จ จะลองเชื่อม Chrome ใหม่")
         finally:
             self._on_status(False)
+            # ตัดการเชื่อมรอบนี้ให้ขาด (ไม่ได้ปิด Chrome) กันไม่ให้ listener ชุดเก่าดัก request ซ้ำ
+            try:
+                await browser.close()
+            except Exception:
+                pass  # หลุดไปแล้ว
