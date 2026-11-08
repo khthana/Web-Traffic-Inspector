@@ -270,8 +270,7 @@ function renderExchangeRow(exchange, selected) {
   li.dataset.tracking = String(Boolean(exchange.hidden_reason?.startsWith("tracking:")));
   li.append(
     methodBadge(exchange.request.method),
-    // LRM ครอบไว้ เพื่อไม่ให้ direction: rtl (ที่ใช้ตัด path จากซ้าย) ย้าย "/" ไปไว้ท้าย
-    textSpan("path", `\u200e${exchange.request.path}\u200e`, exchange.request.url),
+    textSpan("path", ltrText(exchange.request.path), exchange.request.url),
     redactionFlags(exchange),
     statusBadge(exchange),
     textSpan("ms", durationText(exchange)),
@@ -296,6 +295,13 @@ function pathOf(url) {
 
 function clockTime(epochMs) {
   return new Date(epochMs).toLocaleTimeString("th-TH", { hour12: false });
+}
+
+const LRM = String.fromCharCode(0x200e); // left-to-right mark
+
+/** ครอบ path ด้วย LRM: direction: rtl (ที่ใช้ตัด path ยาวจากซ้าย) จะได้ไม่ย้าย "/" ไปไว้ท้าย */
+function ltrText(text) {
+  return `${LRM}${text}${LRM}`;
 }
 
 function shorten(text, max) {
@@ -407,11 +413,16 @@ function badge(text, className) {
   return span;
 }
 
+/** กลุ่มของ status ที่ใช้เลือกสี: pending, failed, 2xx, 3xx, 4xx, 5xx (Timeline, Detail และ Flow strip ใช้ร่วมกัน) */
+function statusKind(exchange) {
+  if (exchange.state !== "done") return exchange.state;
+  return `${Math.floor(exchange.response.status / 100)}xx`;
+}
+
 function statusBadge(exchange) {
-  if (exchange.state === "pending") return badge("รอคำตอบ…", "status-pending");
-  if (exchange.state === "failed") return badge("failed", "status-failed");
-  const status = exchange.response.status;
-  return badge(String(status), `status-${Math.floor(status / 100)}xx`);
+  const kind = statusKind(exchange);
+  const text = { pending: "รอคำตอบ…", failed: "failed" }[kind] ?? String(exchange.response.status);
+  return badge(text, `status-${kind}`);
 }
 
 function textSpan(className, text, title) {
@@ -835,21 +846,28 @@ class DetailView {
   }
 }
 
-/** ความยาวของแต่ละจังหวะใน Flow strip ที่ความเร็ว 1x (ms) รวมช่องว่างแล้วประมาณ 2 วินาที (SPEC 6.5) */
-const LRM = String.fromCharCode(0x200e); // left-to-right mark: กัน direction rtl ย้าย "/" ไปไว้ท้าย
-const FLOW_STEP_MS = { click: 500, request: 700, response: 700 };
+/** แต่ละจังหวะของ Flow strip: ยาวกี่ ms ที่ความเร็ว 1x และวิ่งไปทางไหน (out = ซ้ายไปขวา, back = ขวาไปซ้าย)
+ *  รวมช่องว่างระหว่างจังหวะแล้วประมาณ 2 วินาที (SPEC 6.5) */
+const FLOW_STEPS = {
+  click: { ms: 500, direction: "out" },
+  request: { ms: 700, direction: "out" },
+  response: { ms: 700, direction: "back" },
+};
 const FLOW_GAP_MS = 50;
 const FLOW_SPEEDS = [1, 0.5, 0.25];
+const LANE_START = { left: "0%", transform: "translateX(0)" };
+const LANE_END = { left: "100%", transform: "translateX(-100%)" };
 
-/** จุด/ซองวิ่งจากซ้ายไปขวา (หรือขวาไปซ้าย) จางเข้าตอนออกตัวและจางออกตอนถึง */
-function travel(fromLeft) {
-  const start = fromLeft ? { left: "0%", transform: "translateX(0)" } : { left: "100%", transform: "translateX(-100%)" };
-  const end = fromLeft ? { left: "100%", transform: "translateX(-100%)" } : { left: "0%", transform: "translateX(0)" };
-  return [{ ...start, opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.9 }, { ...end, opacity: 0 }];
+/** keyframes ของจุด/ซองที่วิ่งตามทิศของจังหวะ จางเข้าตอนออกตัวและจางออกตอนถึง */
+function travel(direction) {
+  const [from, to] = direction === "out" ? [LANE_START, LANE_END] : [LANE_END, LANE_START];
+  return [{ ...from, opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.9 }, { ...to, opacity: 0 }];
 }
 
 /** Flow strip ด้านบนของ Detail: เล่นจังหวะ click → request → response ของ Exchange ที่เลือก
  *  เล่นใหม่เมื่อเลือก Exchange อื่น หรือเมื่อคำตอบของ Exchange ที่รออยู่มาถึง (เล่นเฉพาะจังหวะ response)
+ *  ป้ายของแต่ละจังหวะค่อยๆ ขึ้นตามลำดับเสมอ ส่วนจุด/ซองวิ่งเฉพาะจังหวะที่เกิดขึ้นจริง
+ *  (ไม่มีคลิกข้ามจังหวะแรก ยังรอคำตอบหรือล้มเหลวไม่มีซองวิ่งกลับ)
  *  ใช้ Web Animations API (element.animate) แทน CSS animation จึงต่อจังหวะ หยุด และเล่นซ้ำได้จากโค้ดตรงๆ
  *  ผู้ใช้ตั้ง prefers-reduced-motion ไว้: ไม่มีอะไรวิ่ง แสดงป้ายทุกจังหวะนิ่งๆ แทน
  *  สอนแนวคิด: encapsulation — คนอื่นเรียกแค่ show(exchange, interaction) ลำดับจังหวะและความเร็วเป็นเรื่องภายใน */
@@ -859,17 +877,22 @@ class FlowStrip {
     this.preferences = preferences;
     this.reducedMotion = reducedMotion; // MediaQueryList: อ่าน .matches ทุกครั้งที่เล่น ผู้ใช้เปลี่ยนกลางทางก็ได้ผล
     this.exchange = null;
+    this.interaction = null;
     this.animations = [];
     const saved = Number(preferences.get("flowSpeed", 1));
     this.speed = FLOW_SPEEDS.includes(saved) ? saved : 1;
-    this.lanes = Object.fromEntries(Object.keys(FLOW_STEP_MS).map((step) => {
+    this.lanes = Object.fromEntries(Object.keys(FLOW_STEPS).map((step) => {
       const lane = element.querySelector(`[data-step="${step}"]`);
       return [step, { label: lane.querySelector(".flow-label"), token: lane.querySelector(".flow-token") }];
     }));
-    this.speedButtons = [...element.querySelectorAll("[data-speed]")];
-    for (const button of this.speedButtons) {
-      button.addEventListener("click", () => this.changeSpeed(Number(button.dataset.speed)));
-    }
+    this.speedButtons = FLOW_SPEEDS.map((speed) => {
+      const button = el("button", "tool-button", `${speed}x`);
+      button.type = "button";
+      button.dataset.speed = String(speed);
+      button.addEventListener("click", () => this.changeSpeed(speed));
+      return button;
+    });
+    element.querySelector(".flow-speed").replaceChildren(...this.speedButtons);
     element.querySelector("#flow-again").addEventListener("click", () => this.play(this.steps()));
     this.showSpeed();
   }
@@ -892,21 +915,23 @@ class FlowStrip {
     return this.interaction?.kind === "click";
   }
 
-  /** จังหวะที่เล่นได้: ไม่มีคลิกข้ามจังหวะแรก ยังไม่ได้คำตอบ (หรือล้มเหลว) ไม่มีซองวิ่งกลับ */
+  /** จังหวะที่เล่าได้: ไม่มีคลิกข้ามจังหวะแรก */
   steps() {
-    return [
-      ...(this.fromClick() ? ["click"] : []),
-      "request",
-      ...(this.exchange.state === "done" ? ["response"] : []),
-    ];
+    return [...(this.fromClick() ? ["click"] : []), "request", "response"];
+  }
+
+  /** จังหวะนี้มีอะไรวิ่งไหม: ซองวิ่งกลับเฉพาะเมื่อได้คำตอบแล้ว */
+  moves(step) {
+    return step !== "response" || this.exchange.state === "done";
   }
 
   fill() {
     const { request } = this.exchange;
     this.element.dataset.fromClick = String(this.fromClick());
+    this.element.dataset.status = statusKind(this.exchange); // CSS ใช้ระบายสีซองขากลับให้ตรงกับ badge
     this.lanes.click.label.textContent = this.fromClick() ? "click" : "ไม่มีคลิก";
     // path ยาวตัดจากซ้ายแบบเดียวกับ Timeline (…/cart/add) ส่วนท้ายของ path บอกว่าเรียกอะไร
-    this.lanes.request.label.replaceChildren(`${request.method} `, textSpan("flow-path", `${LRM}${request.path}${LRM}`, request.url));
+    this.lanes.request.label.replaceChildren(`${request.method} `, textSpan("flow-path", ltrText(request.path), request.url));
     const duration = durationText(this.exchange);
     this.lanes.response.label.replaceChildren(statusBadge(this.exchange), duration ? ` · ${duration}` : "");
     this.element.querySelector(".flow-host").textContent = request.host;
@@ -917,10 +942,10 @@ class FlowStrip {
     if (this.reducedMotion.matches) return;
     let delay = 0;
     for (const step of steps) {
-      const duration = FLOW_STEP_MS[step] / this.speed;
+      const duration = FLOW_STEPS[step].ms / this.speed;
       const { label, token } = this.lanes[step];
       const timing = { duration, delay, fill: "both", easing: "ease-in-out" };
-      this.animations.push(token.animate(travel(step !== "response"), timing));
+      if (this.moves(step)) this.animations.push(token.animate(travel(FLOW_STEPS[step].direction), timing));
       this.animations.push(label.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, duration: duration / 2 }));
       delay += duration + FLOW_GAP_MS / this.speed;
     }
@@ -1054,7 +1079,7 @@ class KeyboardShortcuts {
   }
 }
 
-/** ค่าที่ผู้ใช้เลือกไว้ (ขนาดตัวอักษร ธีม การปิดแถบเตือน) เก็บใน localStorage ของเบราว์เซอร์ ไม่เขียนไฟล์ใดๆ
+/** ค่าที่ผู้ใช้เลือกไว้ (ขนาดตัวอักษร ธีม การปิดแถบเตือน ความเร็วของ Flow strip) เก็บใน localStorage ของเบราว์เซอร์ ไม่เขียนไฟล์ใดๆ
  *  เปิดแบบ private หรือเบราว์เซอร์บล็อก storage ไว้ก็ยังใช้ได้ แค่จำค่าไม่ได้ (แค่อ่าน window.localStorage
  *  ก็ throw ได้ จึงรับเป็นฟังก์ชันที่เปิด storage แล้วเรียกใน try ทุกครั้ง)
  *  สอนแนวคิด: dependency injection — class อื่นรับ Preferences เข้ามา ไม่เรียก localStorage เอง */

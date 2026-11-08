@@ -10,7 +10,7 @@ from playwright.async_api import Browser, Page
 
 from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
-from inspector.capture_events import ClickCaptured, RequestStarted, ResponseReceived
+from inspector.capture_events import ClickCaptured, RequestFailed, RequestStarted, ResponseReceived
 from inspector.models import ElementInfo
 from inspector.store import EventStore
 
@@ -24,6 +24,7 @@ FLOW_ANIMATIONS = """() => document.getAnimations()
   .filter((a) => a.effect.target.closest('#flow-strip'))
   .map((a) => ({
     step: a.effect.target.closest('[data-step]').dataset.step,
+    part: a.effect.target.classList.contains('flow-token') ? 'token' : 'label',
     end: a.effect.getComputedTiming().endTime,
     state: a.playState,
   }))"""
@@ -52,6 +53,11 @@ def inspector() -> Iterator[str]:
             request_key="slow", tab_id="tab-1", page_url=PAGE, ts=T0 + 20, method="POST",
             url="https://shop.example/api/slow", resource_type="fetch",
         ),
+        RequestStarted(
+            request_key="broken", tab_id="tab-1", page_url=PAGE, ts=T0 + 30, method="GET",
+            url="https://other.example/api/stock", resource_type="fetch",
+        ),
+        RequestFailed(request_key="broken", ts=T0 + 90, failure="net::ERR_FAILED (CORS)"),
     ):
         pipeline.handle(event)
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
@@ -67,6 +73,15 @@ def inspector() -> Iterator[str]:
 async def animations(page: Page) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = await page.evaluate(FLOW_ANIMATIONS)
     return result
+
+
+async def moving(page: Page) -> set[str]:
+    """จังหวะที่มีจุด/ซองวิ่ง"""
+    return {a["step"] for a in await animations(page) if a["part"] == "token"}
+
+
+async def color_of(page: Page, selector: str, prop: str) -> str:
+    return str(await page.locator(selector).evaluate(f"(e) => getComputedStyle(e).{prop}"))
 
 
 async def total_ms(page: Page) -> float:
@@ -92,10 +107,14 @@ def test_three_steps_play_in_about_two_seconds_with_labels_from_the_exchange(ins
         response = strip.locator('[data-step="response"] .flow-label')
         assert await response.inner_text() == "200 · 182 ms"
         assert await response.locator(".badge.status-2xx").count() == 1  # สีตาม status แบบเดียวกับ Timeline
+        badge_color = await color_of(page, '#flow-strip [data-step="response"] .badge', "backgroundColor")
+        assert await color_of(page, '#flow-strip [data-step="response"] .flow-token', "color") == badge_color  # ซองขากลับก็สีเดียวกัน
+        assert await color_of(page, '#flow-strip [data-step="request"] .flow-token', "color") != badge_color  # ขาไปยังไม่รู้ status
         assert "shop.example" in await strip.locator('[data-node="server"]').inner_text()
 
         steps = await animations(page)
         assert {a["step"] for a in steps} == {"click", "request", "response"}
+        assert await moving(page) == {"click", "request", "response"}
         assert 1800 <= await total_ms(page) <= 2200
         await page.wait_for_timeout(2300)
         assert all(a["state"] == "finished" for a in await animations(page))
@@ -124,13 +143,13 @@ def test_exchange_without_a_click_skips_the_first_step(inspector: str) -> None:
 
         assert await page.get_attribute("#flow-strip", "data-from-click") == "false"
         assert await page.inner_text('#flow-strip [data-step="click"] .flow-label') == "ไม่มีคลิก"
-        assert {a["step"] for a in await animations(page)} == {"request", "response"}
+        assert await moving(page) == {"request", "response"}
         assert 1300 <= await total_ms(page) <= 1600
 
         # เลือก Exchange ที่มาจากคลิก: จังหวะแรกกลับมา
         await select(page, "/api/cart/add")
         assert await page.get_attribute("#flow-strip", "data-from-click") == "true"
-        assert "click" in {a["step"] for a in await animations(page)}
+        assert "click" in await moving(page)
 
     in_chrome(scenario)
 
@@ -142,12 +161,39 @@ def test_waiting_exchange_plays_the_response_step_when_the_answer_arrives(inspec
         await select(page, "/api/slow")
         response = page.locator('#flow-strip [data-step="response"] .flow-label')
         assert await response.inner_text() == "รอคำตอบ…"
-        assert "response" not in {a["step"] for a in await animations(page)}
+        assert await moving(page) == {"click", "request"}  # ไม่มีซองวิ่งกลับ
+        # ป้าย "รอคำตอบ…" ขึ้นหลังซองขาไปถึงเซิร์ฟเวอร์ ไม่ใช่โผล่ก่อนจังหวะแรก
+        label = next(a for a in await animations(page) if a["step"] == "response")
+        request_end = max(a["end"] for a in await animations(page) if a["step"] == "request")
+        assert label["part"] == "label" and label["end"] > request_end
 
         await page.request.post(inspector + "/test/respond")
         await response.locator(".badge.status-5xx").wait_for()
         assert await response.inner_text() == "503 · 5000 ms"
         assert {a["step"] for a in await animations(page) if a["state"] == "running"} == {"response"}
+
+    in_chrome(scenario)
+
+
+def test_failed_exchange_has_no_returning_envelope(inspector: str) -> None:
+    async def scenario(browser: Browser) -> None:
+        page = await browser.new_page()
+        await page.goto(inspector + "/")
+        await select(page, "/api/stock")
+        response = page.locator('#flow-strip [data-step="response"] .flow-label')
+        assert await response.locator(".badge.status-failed").inner_text() == "failed"
+        assert "request" in await moving(page) and "response" not in await moving(page)  # ไม่มีคำตอบ: ไม่มีซองวิ่งกลับ
+
+    in_chrome(scenario)
+
+
+def test_flow_strip_fits_a_phone_screen(inspector: str) -> None:
+    async def scenario(browser: Browser) -> None:
+        page = await browser.new_page(viewport={"width": 380, "height": 700})
+        await page.goto(inspector + "/")
+        await select(page, "/api/cart/add")
+        assert await page.evaluate("document.documentElement.scrollWidth") <= 380
+        assert await page.evaluate("(() => { const d = document.getElementById('detail'); return d.scrollWidth <= d.clientWidth; })()")
 
     in_chrome(scenario)
 
