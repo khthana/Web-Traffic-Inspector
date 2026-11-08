@@ -167,8 +167,30 @@ def test_reconnects_when_the_playwright_driver_crashes(chrome: ChromeProcess, si
         await wait_until(lambda: inspector.status()["chrome"] == "connected")
         crash_dispatcher(started[-1])
         chrome.open_tab(site + "/")  # แท็บใหม่ = ข้อความจาก driver → ตัวกระจายข้อความตาย
-        await wait_until(lambda: len(started) == 2 and inspector.status()["chrome"] == "connected")
+        await wait_until(lambda: len(started) >= 2 and inspector.status()["chrome"] == "connected")
         chrome.open_tab(site + "/")
         await wait_until(lambda: any(e["request"]["path"] == "/api/xhr" for e in inspector.exchanges()))
 
     run_live(chrome.cdp_url, scenario, playwright_factory=recording_playwright)
+
+
+def test_a_call_waiting_when_the_driver_crashes_fails_instead_of_hanging(chrome: ChromeProcess, site: str) -> None:
+    # แบบที่เกิดจริงใน #24: driver ตายขณะมีคำสั่งรอคำตอบอยู่ (ที่นี่คือ connect_over_cdp)
+    started: list[Playwright] = []
+
+    @asynccontextmanager
+    async def crashing_first_playwright() -> AsyncIterator[Playwright]:
+        async with async_playwright() as playwright:
+            started.append(playwright)
+            if len(started) == 1:
+                crash_dispatcher(playwright)  # คำตอบของการเชื่อม Chrome จะทำให้ตัวกระจายข้อความตาย
+            yield playwright
+
+    chrome.start()
+
+    async def scenario(inspector: LiveInspector) -> None:
+        await wait_until(lambda: len(started) >= 2 and inspector.status()["chrome"] == "connected")
+        chrome.open_tab(site + "/")
+        await wait_until(lambda: any(e["request"]["path"] == "/api/xhr" for e in inspector.exchanges()))
+
+    run_live(chrome.cdp_url, scenario, playwright_factory=crashing_first_playwright)

@@ -9,6 +9,7 @@ import logging
 import platform
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
+from typing import Any
 from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
@@ -63,6 +64,13 @@ def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
     return " ".join(["nohup", executable, *flags, START_URL, ">/dev/null", "2>&1", "&"])
 
 
+def pipe_transport(playwright: Playwright) -> Any:
+    """ท่อที่ Playwright ใช้คุยกับ driver (ส่วนภายในของ Playwright: รุ่นอื่นอาจไม่มี → None)"""
+    implementation = getattr(playwright, "_impl_obj", None)
+    connection = getattr(implementation, "_connection", None)
+    return getattr(connection, "_transport", None)
+
+
 def watch_for_driver_crash(playwright: Playwright) -> asyncio.Event:
     """Event ที่ถูก set เมื่อ driver ของ Playwright ตายเอง (ไม่ใช่เพราะเราสั่งหยุด)
 
@@ -72,19 +80,20 @@ def watch_for_driver_crash(playwright: Playwright) -> asyncio.Event:
     (แตะส่วนภายในของ Playwright: ถ้ารุ่นอื่นไม่มีส่วนนี้ ก็แค่ไม่มีตัวเฝ้า)
     """
     crashed = asyncio.Event()
-    transport = getattr(getattr(getattr(playwright, "_impl_obj", None), "_connection", None), "_transport", None)
-    stopped = getattr(transport, "_stopped_future", None)
-    errors = getattr(transport, "on_error_future", None)
-    if not isinstance(stopped, asyncio.Future) or not isinstance(errors, asyncio.Future):
+    transport = pipe_transport(playwright)
+    stopped = getattr(transport, "_stopped_future", None)  # เสร็จเมื่อท่อปิด ไม่ว่าด้วยเหตุใด
+    on_error = getattr(transport, "on_error_future", None)  # คำสั่งที่รอคำตอบอยู่ทุกตัวเฝ้าดูตัวนี้ด้วย
+    if not isinstance(stopped, asyncio.Future) or not isinstance(on_error, asyncio.Future):
         return crashed
 
     def on_stopped(_: asyncio.Future[None]) -> None:
         if getattr(transport, "_stopped", False):
             return  # เราสั่งหยุดเอง (ออกจาก async with)
         crashed.set()
-        if not errors.done():
-            errors.set_exception(PlaywrightError("Playwright driver หยุดทำงาน จะเริ่มใหม่"))
-            errors.exception()  # ทำเครื่องหมายว่ารับรู้แล้ว ไม่ให้ asyncio เตือนเมื่อไม่มีใครรอ
+        log.warning("Playwright driver หยุดทำงานเอง (บั๊กของ Playwright ตอนเชื่อม Chrome ใหม่) จะเริ่มใหม่")
+        if not on_error.done():
+            on_error.set_exception(PlaywrightError("Playwright driver หยุดทำงาน จะเริ่มใหม่"))
+            on_error.exception()  # ทำเครื่องหมายว่ารับรู้แล้ว ไม่ให้ asyncio เตือนเมื่อไม่มีใครรอ
 
     stopped.add_done_callback(on_stopped)
     return crashed
@@ -123,8 +132,11 @@ class ChromeConnector:
 
     async def run(self) -> None:
         while True:
-            async with self._playwright_factory() as playwright:
-                await self._connect_and_serve(playwright, watch_for_driver_crash(playwright))
+            try:
+                async with self._playwright_factory() as playwright:
+                    await self._connect_and_serve(playwright, watch_for_driver_crash(playwright))
+            except Exception:  # เริ่ม Playwright ไม่สำเร็จ: อย่าให้การเชื่อมใหม่หยุดไปเงียบๆ
+                log.exception("เริ่ม Playwright ไม่สำเร็จ จะลองใหม่")
             await asyncio.sleep(self._retry_s)
 
     async def _connect_and_serve(self, playwright: Playwright, crashed: asyncio.Event) -> None:
@@ -153,8 +165,6 @@ class ChromeConnector:
             self._on_status(True)
             await self._on_context(browser.contexts[0])
             await first_of(disconnected, crashed)
-            if crashed.is_set():
-                log.warning("Playwright หยุดทำงานกลางคัน จะเชื่อม Chrome ใหม่")
         except Exception:
             log.exception("ตั้งค่าการดัก traffic ไม่สำเร็จ จะลองเชื่อม Chrome ใหม่")
         finally:
