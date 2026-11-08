@@ -366,7 +366,7 @@ pip install -r requirements.txt
   --no-first-run https://www.advice.co.th
 ```
 
-`scripts/start_chrome.command` (macOS, ต้อง `chmod +x`):
+`scripts/start_chrome.command` (macOS, executable bit เก็บไว้ใน git แล้ว: clone มาก็ดับเบิลคลิกได้):
 
 ```sh
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \

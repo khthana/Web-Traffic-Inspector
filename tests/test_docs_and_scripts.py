@@ -3,6 +3,7 @@
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,43 @@ def test_readme_covers_what_a_new_student_needs() -> None:
     ):
         assert must in readme, must
     assert readme.count("- [ ]") >= 10  # checklist ทดสอบกับเว็บจริง (SPEC 9.2)
+
+
+def run_mac_script(home: Path) -> subprocess.CompletedProcess[str]:
+    """รันสคริปต์ macOS ด้วย sh โดยให้ HOME ชี้ไปที่โฟลเดอร์ทดสอบ (ไม่แตะโปรไฟล์จริงของเครื่อง)"""
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("ไม่มี sh ในเครื่องนี้")
+    if Path("/Applications/Google Chrome.app").exists():
+        pytest.skip("เครื่องนี้มี Chrome ใน /Applications: สคริปต์จะเปิด Chrome จริงแทนตัวปลอม")
+    env = {"HOME": home.as_posix(), "PATH": str(Path(sh).parent)}
+    return subprocess.run([sh, MAC_SCRIPT.as_posix()], env=env, capture_output=True, encoding="utf-8", timeout=10)
+
+
+def test_mac_script_starts_chrome_from_home_applications_with_debug_flags(tmp_path: Path) -> None:
+    # ติดตั้ง Chrome ปลอมใน ~/Applications ที่จดอาร์กิวเมนต์ที่ได้รับไว้
+    received = tmp_path / "received.txt"
+    chrome = tmp_path / "Applications" / "Google Chrome.app" / "Contents" / "MacOS" / "Google Chrome"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text(f'#!/bin/sh\nfor arg in "$@"; do echo "$arg"; done > "{received.as_posix()}"\n', newline="\n")
+    chrome.chmod(0o755)
+
+    result = run_mac_script(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "python3 -m inspector" in result.stdout
+    deadline = time.monotonic() + 5  # Chrome ถูกเปิดแบบ nohup ... & จึงอาจเขียนไฟล์หลังสคริปต์จบ
+    while not (received.exists() and received.read_text().endswith(START_URL + "\n")) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    args = received.read_text().splitlines()
+    expected = [*debug_flags(DEFAULT_CDP_PORT, "PROFILE"), START_URL]
+    profile_at = expected.index("--user-data-dir=PROFILE")
+    # sh บน Windows (Git Bash) เขียน HOME เป็น /tmp/... จึงเทียบแค่ท้าย path ของโปรไฟล์
+    assert args[profile_at].endswith(f"/{tmp_path.name}/{PROFILE_NAME_POSIX}")
+    assert args[:profile_at] + args[profile_at + 1 :] == expected[:profile_at] + expected[profile_at + 1 :]
+
+
+def test_mac_script_explains_when_chrome_is_not_installed(tmp_path: Path) -> None:
+    result = run_mac_script(tmp_path)
+    assert result.returncode == 1
+    assert "ไม่พบ Google Chrome" in result.stdout
