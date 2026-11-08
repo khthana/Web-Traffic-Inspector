@@ -26,11 +26,18 @@ def body_kind(headers: dict[str, str], body: str | None) -> BodyKind:
         return "json"
     if "x-www-form-urlencoded" in content_type:
         return "form"
+    if content_type.startswith("multipart/"):
+        return "multipart"
     if content_type.startswith("text/") or "xml" in content_type or "javascript" in content_type:
         return "text"
     if not content_type:
         return "text"
     return "binary"
+
+
+def describe_size(size: int) -> str:
+    """ขนาดแบบคนอ่าน เช่น 512 B หรือ 1.5 KB"""
+    return f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
 
 
 def header(headers: dict[str, str], name: str) -> str:

@@ -18,7 +18,7 @@ from inspector.capture_events import (
 )
 from inspector.correlator import Correlation, Correlator
 from inspector.filters import CUSTOM, FilterSettings
-from inspector.http_parts import body_kind, split_url
+from inspector.http_parts import body_kind, header, split_url
 from inspector.models import (
     ClickEvent,
     FilterUpdate,
@@ -189,7 +189,7 @@ class InspectorPipeline:
         # Redaction ทำตรงนี้ ก่อนสร้าง Exchange ค่าจริงจึงไม่เคยถูกเก็บหรือส่งออกไป
         host, path, query = split_url(event.url)
         kind = body_kind(event.headers, event.post_data)
-        body = self._redactor.body(event.post_data, kind)
+        body = self._redactor.body(event.post_data, kind, header(event.headers, "content-type"))
         page_url = self._redactor.url(event.page_url)
         request = HttpRequest(
             method=event.method,
@@ -201,6 +201,7 @@ class InspectorPipeline:
             body=body.text,
             body_kind=kind,
             body_unscanned=body.unscanned,
+            body_error=event.body_error,
         )
         exchange_id = self._new_id()
         correlation = self._correlator.exchange(exchange_id, event.tab_id, page_url, event.ts)
@@ -218,7 +219,7 @@ class InspectorPipeline:
                 page_url != event.page_url
                 or request.url != event.url
                 or request.headers != event.headers
-                or request.body != event.post_data
+                or body.redacted
             ),
         )
         exchange = self._summarized(self._chain.apply(exchange))
@@ -233,7 +234,7 @@ class InspectorPipeline:
         if exchange is None:
             return
         kind = body_kind(event.headers, event.body)
-        body = self._redactor.body(event.body, kind)
+        body = self._redactor.body(event.body, kind, header(event.headers, "content-type"))
         response = HttpResponse(
             status=event.status,
             status_text=event.status_text,
@@ -252,7 +253,7 @@ class InspectorPipeline:
                     "duration_ms": event.ts - exchange.started_at,
                     "has_redactions": exchange.has_redactions
                     or response.headers != event.headers
-                    or response.body != event.body,
+                    or body.redacted,
                 }
             )
         )

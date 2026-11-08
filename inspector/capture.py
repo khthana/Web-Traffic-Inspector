@@ -21,13 +21,13 @@ from inspector.capture_events import (
 )
 from inspector.click_tracker import ClickTracker
 from inspector.clock import now_ms
-from inspector.http_parts import header, origin_of
+from inspector.http_parts import describe_size, header, origin_of
 
 MAX_BODY_BYTES = 64 * 1024
 CAPTURED_TYPES = ("fetch", "xhr")
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 IGNORED_SCHEMES = ("about:", "chrome:", "chrome-extension:", "devtools:", "chrome-untrusted:", "edge:")
-TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql")
+TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql", "multipart/")
 
 
 def is_inspector_url(url: str, inspector_origins: tuple[str, ...]) -> bool:
@@ -40,10 +40,6 @@ def is_watchable(url: str, inspector_origins: tuple[str, ...]) -> bool:
     return not url.startswith(IGNORED_SCHEMES) and not is_inspector_url(url, inspector_origins)
 
 
-def describe_size(size: int) -> str:
-    return f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-
-
 def charset_of(content_type: str) -> str:
     """อ่าน charset จาก Content-Type (เว็บไทยเก่าบางเว็บใช้ windows-874) ถ้าไม่บอกหรือไม่รู้จักใช้ UTF-8"""
     message = Message()
@@ -53,6 +49,16 @@ def charset_of(content_type: str) -> str:
         return codecs.lookup(charset).name
     except LookupError:
         return "utf-8"
+
+
+def is_multipart(content_type: str) -> bool:
+    return content_type.strip().lower().startswith("multipart/")
+
+
+def decode_multipart(raw: bytes) -> str:
+    """multipart อาจมีไฟล์ binary ปนกับ field ข้อความ: byte ที่ไม่ใช่ UTF-8 เก็บเป็น surrogate
+    Redactor จึงนับขนาดไฟล์ได้ตรง และแทนเนื้อไฟล์ด้วยคำอธิบายก่อนเก็บ"""
+    return raw.decode("utf-8", "surrogateescape")
 
 
 def decode_body(content_type: str, raw: bytes) -> tuple[str | None, int, str | None]:
@@ -70,7 +76,8 @@ def decode_body(content_type: str, raw: bytes) -> tuple[str | None, int, str | N
     # decoder แบบทีละช่วง: ถ้าตัดที่ 64 KB แล้วตกกลางตัวอักษร (เช่นภาษาไทย 3 byte)
     # มันจะเก็บ byte ที่ไม่ครบตัวไว้ แทนที่จะได้ตัวเพี้ยนท้ายข้อความ
     head = raw[:MAX_BODY_BYTES]
-    decoder = codecs.getincrementaldecoder(charset_of(content_type))(errors="replace")
+    errors = "surrogateescape" if is_multipart(content_type) else "replace"
+    decoder = codecs.getincrementaldecoder(charset_of(content_type))(errors=errors)
     text = decoder.decode(head, final=len(raw) <= MAX_BODY_BYTES)
     kept = len(head) - len(decoder.getstate()[0])
     return text, len(raw) - kept, None
@@ -157,6 +164,7 @@ class TrafficCapture:
     async def _start(self, request: Request, page: Page, page_url: str, ts: float) -> str:
         """ส่ง RequestStarted แล้วคืน request_key"""
         headers = await all_headers(request)
+        post_data, body_error = self._post_data(request, header(headers, "content-type"))
         self._next_request += 1
         key = f"req-{self._next_request}"
         self._sink(
@@ -169,7 +177,8 @@ class TrafficCapture:
                 url=request.url,
                 resource_type=cast(Literal["fetch", "xhr"], request.resource_type),
                 headers=headers,
-                post_data=self._post_data(request),
+                post_data=post_data,
+                body_error=body_error,
             )
         )
         return key
@@ -237,8 +246,14 @@ class TrafficCapture:
             return None
 
     @staticmethod
-    def _post_data(request: Request) -> str | None:
+    def _post_data(request: Request, content_type: str) -> tuple[str | None, str | None]:
+        """(body, เหตุผลที่ไม่มี body)"""
         try:
-            return request.post_data
+            if is_multipart(content_type):
+                raw = request.post_data_buffer
+                if raw is None:  # Chrome ไม่ส่ง body ที่มีไฟล์ (Blob) มาทาง CDP
+                    return None, "Chrome ไม่ส่ง body ของฟอร์มที่แนบไฟล์มาให้ (multipart/form-data)"
+                return decode_multipart(raw), None
+            return request.post_data, None
         except (PlaywrightError, UnicodeDecodeError):  # body เป็น binary ที่ decode เป็นข้อความไม่ได้
-            return None
+            return None, None

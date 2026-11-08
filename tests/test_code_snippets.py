@@ -223,3 +223,28 @@ def test_each_snippet_says_where_it_runs(harness: Harness) -> None:
     assert "Git Bash" in samples["curl"] and "PowerShell" in samples["curl"]
     assert "pip install requests" in samples["python"]
     assert "CORS" in samples["fetch"]
+
+
+def test_multipart_form_is_explained_instead_of_copied(harness: Harness) -> None:
+    # body ที่ซ่อนค่าและย่อไฟล์แล้วไม่ใช่ฟอร์มเดิม: ใส่ในโค้ดไปก็ส่งได้ไม่ถูก
+    boundary = "----b"
+    body = f'--{boundary}\r\nContent-Disposition: form-data; name="title"\r\n\r\nสวัสดี\r\n--{boundary}--\r\n'
+    exchange_id = started(
+        harness, "POST", "https://shop.example/api/form", {"content-type": f"multipart/form-data; boundary={boundary}"}, body
+    )
+    for language, code in snippets(harness, exchange_id).items():
+        assert "Content-Disposition" not in code, language
+        assert "multipart/form-data" in code and "คัดลอกเป็นโค้ดไม่ได้" in code, language
+
+
+def test_body_chrome_did_not_hand_over_is_mentioned(harness: Harness) -> None:
+    harness.feed(
+        RequestStarted(
+            request_key="file", tab_id="tab-1", page_url="https://shop.example/", ts=1.0, method="POST",
+            url="https://shop.example/api/upload", resource_type="fetch",
+            headers={"content-type": "multipart/form-data; boundary=x"}, body_error="Chrome ไม่ส่ง body ของฟอร์มที่แนบไฟล์มาให้",
+        )
+    )
+    [exchange] = harness.get("/api/interactions")["exchanges"]
+    for language, code in snippets(harness, exchange["id"]).items():
+        assert "Chrome ไม่ส่ง body ของฟอร์มที่แนบไฟล์มาให้" in code, language

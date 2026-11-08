@@ -392,7 +392,7 @@ function redactionFlags(exchange) {
   }
   const parts = [exchange.request, exchange.response].filter(Boolean);
   if (parts.some((part) => part.body && part.body_unscanned)) {
-    span.append(textSpan("flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ", "body นี้ไม่ใช่ JSON หรือ form แบบ urlencoded (เช่น text, multipart, binary) จึงไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
+    span.append(textSpan("flag-unscanned", "ไม่ได้ตรวจหาข้อมูลลับ", "body นี้อ่านรูปแบบไม่ออก (เช่น text, binary หรือ JSON/multipart ที่ผิดรูปหรือถูกตัด) จึงไม่ได้ตรวจหาข้อมูลลับ — ระวังก่อนแสดงหน้าห้อง"));
   }
   return span;
 }

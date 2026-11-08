@@ -48,7 +48,7 @@ _Avoid_: blocked, filtered-out request, junk
 ชุดกฎการกรองที่มีชื่อ (เช่น `all`, `advice`) ผู้สอนเลือกได้ครั้งละหนึ่งชุด
 
 **Redaction**:
-การแทนค่าลับด้วย `••••` ก่อนที่ Exchange จะถูกเก็บ ครอบคลุม headers, query, URL ทุกตัว, JSON และ form body ทั้งฝั่ง request และ response ปิดไม่ได้
+การแทนค่าลับด้วย `••••` ก่อนที่ Exchange จะถูกเก็บ ครอบคลุม headers, query, URL ทุกตัว, JSON, form และ multipart body (ไฟล์แนบเหลือแค่ชื่อ ชนิด และขนาด) ทั้งฝั่ง request และ response ปิดไม่ได้
 _Avoid_: masking, sanitizing, censoring
 
 **Recording**:

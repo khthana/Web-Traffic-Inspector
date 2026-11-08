@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-BodyKind = Literal["json", "form", "text", "binary", "none"]
+BodyKind = Literal["json", "form", "multipart", "text", "binary", "none"]
 InteractionKind = Literal["click", "page_load", "background"]
 
 
@@ -46,6 +46,7 @@ class HttpRequest(BaseModel):
     body: str | None
     body_kind: BodyKind
     body_unscanned: bool = True  # True = ยังไม่ได้ตรวจหาข้อมูลลับ (ค่าเริ่มต้นแบบปลอดภัยไว้ก่อน)
+    body_error: str | None = None  # เหตุผลที่อ่าน body ไม่ได้ (เช่นฟอร์มที่แนบไฟล์)
 
 
 class HttpResponse(BaseModel):

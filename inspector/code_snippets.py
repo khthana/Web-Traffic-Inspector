@@ -52,12 +52,16 @@ class CopyableRequest:
                 headers.append((name, value))
 
         url = encode_url(request.url)
-        body = request.body if request.body_kind not in ("none", "binary") else None
+        body = request.body if request.body_kind not in ("none", "binary", "multipart") else None
         notes: list[str] = []
         if hidden:
             notes.append(f"ไม่ใส่ header ที่ถูกซ่อนไว้: {', '.join(hidden)}")
         if request.body_kind == "binary":
             notes.append("body เป็น binary คัดลอกเป็นโค้ดไม่ได้")
+        if request.body_kind == "multipart":
+            notes.append("body เป็นฟอร์ม multipart/form-data ที่ซ่อนค่าและย่อไฟล์ไว้แล้ว คัดลอกเป็นโค้ดไม่ได้ ดูในแท็บขาออก")
+        if request.body_error:
+            notes.append(f"ไม่มี body ในโค้ด: {request.body_error}")
         if REDACTED in request.url:
             notes.append(f"{REDACTED} คือค่าที่ถูกซ่อนไว้ ใน URL เขียนเป็น {encode_url(REDACTED)} ใส่ค่าของตัวเองแทนก่อนรัน")
         elif body is not None and REDACTED in body:

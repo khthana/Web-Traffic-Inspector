@@ -27,6 +27,7 @@ class RequestStarted:
     resource_type: Literal["fetch", "xhr"]
     headers: dict[str, str] = field(default_factory=dict)
     post_data: str | None = None
+    body_error: str | None = None  # เหตุผลที่ไม่มี body ทั้งที่ request ส่ง body ไป
 
 
 @dataclass(frozen=True)
