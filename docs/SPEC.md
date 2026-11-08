@@ -366,14 +366,14 @@ pip install -r requirements.txt
   --no-first-run https://www.advice.co.th
 ```
 
-`scripts/start_chrome.command` (macOS, executable bit เก็บไว้ใน git แล้ว: clone มาก็ดับเบิลคลิกได้):
+`scripts/start_chrome.command` (macOS: executable bit อยู่ใน git แล้ว ถ้าดาวน์โหลดเป็น ZIP อาจติด Gatekeeper ดู README):
 
 ```sh
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
   --remote-debugging-address=127.0.0.1 \
   --user-data-dir="$HOME/.traffic-inspector-profile" \
-  --no-first-run https://www.advice.co.th &
+  --no-first-run https://www.advice.co.th >/dev/null 2>&1 &  # สคริปต์จริงขึ้นต้นด้วย nohup
 ```
 
 **ขั้นที่ 2: รัน Inspector**

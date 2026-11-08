@@ -47,8 +47,8 @@ pip install -r requirements.txt
 **ขั้นที่ 1: เปิด Chrome โหมด debug** เลือกวิธีใดวิธีหนึ่ง
 
 - ดับเบิลคลิกสคริปต์: Windows ใช้ `scripts/start_chrome.bat` ส่วน macOS ใช้ `scripts/start_chrome.command`
-  (ถ้า macOS ไม่ยอมเปิด: macOS 15 ขึ้นไปไปที่ System Settings → Privacy & Security → Open Anyway รุ่นก่อนหน้าคลิกขวา → Open
-  หรือข้ามทั้งหมดด้วยการรันใน Terminal: `sh scripts/start_chrome.command`)
+  (ถ้า macOS ไม่ยอมเปิด ซึ่งมักเกิดเมื่อดาวน์โหลดเป็น ZIP: macOS 15 ขึ้นไปไปที่ System Settings → Privacy & Security → Open Anyway;
+  รุ่นก่อนหน้าคลิกขวา → Open; หรือรันใน Terminal จากโฟลเดอร์โปรเจกต์: `sh scripts/start_chrome.command`)
 - หรือให้ Inspector เปิดให้: `python -m inspector --launch-chrome` (รวมขั้นที่ 1 และ 2 ไว้ในคำสั่งเดียว)
 
 Chrome ที่เปิดขึ้นมาใช้ **โปรไฟล์แยก** (`%LOCALAPPDATA%\TrafficInspectorProfile` บน Windows หรือ `~/.traffic-inspector-profile` บน macOS)

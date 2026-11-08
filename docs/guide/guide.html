@@ -122,8 +122,8 @@ pip install -r requirements.txt</pre>
     <li><b>เปิด Chrome โหมด debug</b> เลือกวิธีใดวิธีหนึ่ง
       <ul>
         <li>ดับเบิลคลิกสคริปต์: Windows ใช้ <code>scripts/start_chrome.bat</code>, macOS ใช้ <code>scripts/start_chrome.command</code>
-          (ถ้า macOS ไม่ยอมเปิด: macOS 15 ขึ้นไปไปที่ System Settings → Privacy &amp; Security → Open Anyway รุ่นก่อนหน้าคลิกขวา → Open
-          หรือข้ามทั้งหมดด้วยการรันใน Terminal: <code>sh scripts/start_chrome.command</code>)</li>
+          (ถ้า macOS ไม่ยอมเปิด ซึ่งมักเกิดเมื่อดาวน์โหลดเป็น ZIP: macOS 15 ขึ้นไปไปที่ System Settings → Privacy &amp; Security → Open Anyway;
+          รุ่นก่อนหน้าคลิกขวา → Open; หรือรันใน Terminal จากโฟลเดอร์โปรเจกต์: <code>sh scripts/start_chrome.command</code>)</li>
         <li>หรือให้ Inspector เปิดให้เลย: <code>python -m inspector --launch-chrome</code> (รวมขั้นที่ 1 และ 2 ในคำสั่งเดียว)</li>
       </ul>
       Chrome ตัวนี้ใช้<b>โปรไฟล์แยก</b> จึงไม่ปนกับบัญชีส่วนตัว และเปิดพร้อม Chrome ปกติได้
