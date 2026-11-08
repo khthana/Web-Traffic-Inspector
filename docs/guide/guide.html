@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>คู่มือการใช้งาน Web Traffic Inspector</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm; @bottom-center { content: counter(page); font: 10pt Sarabun, sans-serif; color: #888; } }
+  @page :first { @bottom-center { content: none; } }
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #d9dee7; --accent: #1f5fa8; --soft: #f2f5fa; --warn: #fff4e0; --warn-line: #e3a33b; }
+  body { font-family: Sarabun, "Leelawadee UI", Tahoma, sans-serif; font-size: 11pt; line-height: 1.6; color: var(--ink); margin: 0; }
+  h1, h2, h3 { line-height: 1.3; }
+  h2 { font-size: 17pt; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin: 0 0 12px; break-after: avoid; }
+  h3 { font-size: 13pt; margin: 18px 0 6px; break-after: avoid; }
+  section { margin-top: 26px; }
+  section.newpage { break-before: page; margin-top: 0; }
+  p { margin: 6px 0; orphans: 3; widows: 3; }
+  h2 + p, h3 + p { break-before: avoid; }
+  code, pre, kbd { font-family: "JetBrains Mono", Consolas, monospace; font-size: 9.5pt; }
+  code { background: var(--soft); padding: 1px 4px; border-radius: 3px; }
+  pre { background: #1d2433; color: #eef2f8; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; break-inside: avoid; margin: 8px 0; }
+  pre .c { color: #9fb0c8; }
+  kbd { border: 1px solid #aab3c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #fff; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt; break-inside: auto; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  tr { break-inside: avoid; }
+  tr:first-child, tr:nth-child(2) { break-after: avoid; }
+  figure { margin: 10px 0 14px; break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  figcaption { font-size: 9.5pt; color: var(--muted); margin-top: 4px; }
+  .note, .warn { border-left: 4px solid var(--accent); background: var(--soft); padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0; break-inside: avoid; }
+  .warn { border-color: var(--warn-line); background: var(--warn); }
+  ol.steps { padding-left: 0; list-style: none; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 38px; margin: 10px 0; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; text-align: center; line-height: 26px; }
+  ul { padding-left: 22px; margin: 6px 0; }
+  li { margin: 3px 0; }
+  .cover { height: 245mm; display: flex; flex-direction: column; justify-content: center; }
+  .cover .kicker { color: var(--accent); font-weight: 600; letter-spacing: .5px; }
+  .cover h1 { font-size: 34pt; margin: 6px 0 4px; }
+  .cover .sub { font-size: 15pt; color: var(--muted); margin-bottom: 26px; }
+  .cover img { width: 100%; border: 1px solid var(--line); border-radius: 8px; }
+  .cover .meta { margin-top: 20px; color: var(--muted); font-size: 10.5pt; }
+  .toc { columns: 2; column-gap: 28px; padding-left: 20px; }
+  .toc li { break-inside: avoid; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">คู่มือการใช้งาน · เวอร์ชัน 1</div>
+  <h1>Web Traffic Inspector</h1>
+  <div class="sub">ดูว่าคลิกหนึ่งครั้งบนเว็บ ทำให้เบราว์เซอร์ส่ง request อะไร และเซิร์ฟเวอร์ตอบอะไรกลับมา</div>
+  <img src="overview.png" alt="หน้าจอ Web Traffic Inspector">
+  <div class="meta">สำหรับผู้สอนวิชาเว็บและเครือข่าย · ใช้ได้ทั้ง Windows และ macOS · ภาพหน้าจอในคู่มือนี้ถ่ายจากโหมด <code>--demo</code> (ข้อมูลตัวอย่าง)</div>
+</div>
+
+<section class="newpage">
+  <h2>สารบัญ</h2>
+  <ol class="toc">
+    <li>Inspector คืออะไร</li>
+    <li>ติดตั้ง (ครั้งเดียว)</li>
+    <li>เริ่มใช้งานใน 3 ขั้น</li>
+    <li>รู้จักหน้าจอ</li>
+    <li>แท็บใน Detail</li>
+    <li>แถบเครื่องมือและปุ่มลัด</li>
+    <li>Preset และ Exchange ที่ถูกซ่อน</li>
+    <li>Export และเปิดไฟล์ Recording</li>
+    <li>ตัวเลือก command line</li>
+    <li>ความปลอดภัยและข้อมูลลับ</li>
+    <li>ข้อจำกัดที่ควรรู้</li>
+    <li>เคล็ดลับการสาธิตในห้อง</li>
+    <li>แก้ปัญหาที่พบบ่อย</li>
+  </ol>
+
+  <h2 style="margin-top:28px">1. Inspector คืออะไร</h2>
+  <p>Web Traffic Inspector เป็นเครื่องมือสอนที่ต่อเข้ากับ Chrome ของผู้สอนผ่าน <b>Chrome DevTools Protocol (CDP)</b> แบบดูอย่างเดียว
+  แล้วแสดงสิ่งที่เกิดขึ้นเมื่อผู้ใช้คลิกบนเว็บ เป็นลำดับ <b>คลิก → request → response</b> ที่หน้า <code>http://127.0.0.1:8000</code></p>
+  <ul>
+    <li><b>ดูอย่างเดียว</b>: ไม่แก้ ไม่บล็อก และไม่ส่ง request ซ้ำไปยังเว็บ</li>
+    <li><b>ซ่อนค่าลับก่อนเก็บเสมอ</b>: cookie, token, password, รหัสติดตามผู้ใช้ ฯลฯ แสดงเป็น <code>••••</code> และปิดไม่ได้</li>
+    <li><b>ไม่เขียนลงดิสก์เอง</b>: ไฟล์จะเกิดขึ้นก็ต่อเมื่อกดปุ่ม Export เท่านั้น</li>
+  </ul>
+
+  <h3>ศัพท์ที่ใช้ในคู่มือ</h3>
+  <table>
+    <tr><th style="width:24%">คำ</th><th>ความหมาย</th></tr>
+    <tr><td>Exchange</td><td>request หนึ่งตัวคู่กับ response ของมัน (หนึ่งแถวใน Timeline)</td></tr>
+    <tr><td>Interaction</td><td>สาเหตุที่ทำให้เกิด Exchange: การคลิก, การเปิดหน้า หรือ "เกิดเองโดยไม่มีคลิก" (Background)</td></tr>
+    <tr><td>Timeline</td><td>คอลัมน์ซ้าย แสดง Interaction ใหม่สุดอยู่บน</td></tr>
+    <tr><td>Detail</td><td>คอลัมน์ขวา แสดงรายละเอียดของ Exchange ที่เลือก</td></tr>
+    <tr><td>Preset</td><td>ชุดกฎการกรอง ว่าจะแสดงเฉพาะเว็บไหน และซ่อนอะไร</td></tr>
+    <tr><td>Recording</td><td>ไฟล์ JSON ที่ได้จากปุ่ม Export ใช้เปิดดูย้อนหลังได้โดยไม่ต้องต่อ Chrome</td></tr>
+  </table>
+
+  <div class="warn">ใช้ดู traffic ของตัวเองเพื่อการเรียนรู้เท่านั้น อย่านำ API ของเว็บอื่นไปเรียกซ้ำหรือดึงข้อมูลจำนวนมาก</div>
+</section>
+
+<section>
+  <h2>2. ติดตั้ง (ครั้งเดียว)</h2>
+  <p>ต้องมี <b>Python 3.11 ขึ้นไป</b> และ <b>Google Chrome</b> แล้วเปิด Terminal ที่โฟลเดอร์ของโปรเจกต์</p>
+
+  <h3>Windows (PowerShell)</h3>
+<pre>python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt</pre>
+  <p>ถ้าขึ้นว่า <i>running scripts is disabled</i> ตอนรัน <code>Activate.ps1</code> ให้รันคำสั่งนี้ครั้งเดียวแล้วลองใหม่</p>
+<pre>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</pre>
+
+  <h3>macOS (Terminal)</h3>
+<pre>python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt</pre>
+
+  <div class="note">ไม่ต้องรัน <code>playwright install</code> เพราะ Inspector ใช้ Chrome ที่ติดตั้งอยู่ในเครื่อง ไม่ได้ดาวน์โหลดเบราว์เซอร์เพิ่ม</div>
+  <p>ครั้งต่อไปที่จะใช้ ให้เปิด Terminal ที่โฟลเดอร์โปรเจกต์แล้วรันคำสั่ง activate (บรรทัดที่ 2 ด้านบน) ก่อนทุกครั้ง</p>
+
+  <h2 style="margin-top:28px">3. เริ่มใช้งานใน 3 ขั้น</h2>
+  <ol class="steps">
+    <li><b>เปิด Chrome โหมด debug</b> เลือกวิธีใดวิธีหนึ่ง
+      <ul>
+        <li>ดับเบิลคลิกสคริปต์: Windows ใช้ <code>scripts/start_chrome.bat</code>, macOS ใช้ <code>scripts/start_chrome.command</code>
+          (ถ้า macOS ไม่ยอมเปิด ให้คลิกขวา → Open ในครั้งแรก หรือรัน <code>chmod +x scripts/start_chrome.command</code>)</li>
+        <li>หรือให้ Inspector เปิดให้เลย: <code>python -m inspector --launch-chrome</code> (รวมขั้นที่ 1 และ 2 ในคำสั่งเดียว)</li>
+      </ul>
+      Chrome ตัวนี้ใช้<b>โปรไฟล์แยก</b> จึงไม่ปนกับบัญชีส่วนตัว และเปิดพร้อม Chrome ปกติได้
+    </li>
+    <li><b>รัน Inspector</b>
+<pre>python -m inspector                  <span class="c"># เชื่อม Chrome ที่เปิดไว้แล้ว</span>
+python -m inspector --preset advice  <span class="c"># เริ่มด้วย preset ของ advice.co.th</span></pre>
+      โปรแกรมเปิดหน้า <code>http://127.0.0.1:8000</code> ให้อัตโนมัติ กด <kbd>Ctrl</kbd>+<kbd>C</kbd> ใน Terminal เพื่อปิดโปรแกรม
+    </li>
+    <li><b>คลิกบนเว็บใน Chrome ตัวนั้น</b> แล้วดูผลใน Inspector แนะนำให้วางหน้าต่าง Chrome กับ Inspector ซ้าย-ขวาบนจอโปรเจกเตอร์</li>
+  </ol>
+
+  <p>ถ้ารัน Inspector ก่อนเปิด Chrome หน้าจอจะแสดง "ไม่พบ Chrome ที่เปิดโหมด debug" พร้อมคำสั่งให้กด <b>คัดลอกคำสั่ง</b> ไปวางใน Terminal
+  เมื่อ Chrome เปิดขึ้นมา Inspector จะเชื่อมต่อเองภายในไม่กี่วินาที</p>
+  <figure><img src="nochrome.png" alt="หน้าจอเมื่อไม่พบ Chrome"><figcaption>ภาพที่ 1 · เปิด Inspector ก่อน Chrome: มีคำสั่งเปิด Chrome ให้คัดลอก</figcaption></figure>
+</section>
+
+<section>
+  <h2>4. รู้จักหน้าจอ</h2>
+  <figure><img src="overview.png" alt="หน้าจอหลัก"><figcaption>ภาพที่ 2 · ซ้าย: Timeline ของแต่ละคลิก · ขวา: Detail ของ Exchange ที่เลือก (ในภาพคือ <code>cart/add</code>)</figcaption></figure>
+
+  <h3>Timeline (คอลัมน์ซ้าย)</h3>
+  <ul>
+    <li>แต่ละก้อนคือหนึ่ง Interaction: <b>คลิก &lt;button&gt; "ใส่ตะกร้า"</b>, <b>เปิดหน้า /</b> หรือ <b>เกิดเองโดยไม่มีคลิก</b> พร้อมเวลาและชื่อเว็บ</li>
+    <li>ถ้าคลิกพาไปหน้าใหม่ หัวข้อจะบอกว่า "→ เปลี่ยนหน้าไป ..."</li>
+    <li>ในก้อนมีรายการ Exchange: method (<code>GET</code>/<code>POST</code>), path, status (<code>200</code>, <code>404</code> ...) และเวลาที่ใช้ พร้อมประโยคสรุปภาษาคน เช่น
+      <i>เบราว์เซอร์ส่งข้อมูลไป "cart/add" → เซิร์ฟเวอร์ตอบ 200 สำเร็จ ใน 417 ms</i></li>
+    <li>คลิกที่ไม่มี request เลยจะขึ้นว่า "ไม่มี API call — ปุ่มนี้ทำงานในเบราว์เซอร์อย่างเดียว" ซึ่งเป็นจุดสอนที่ดี</li>
+  </ul>
+
+  <h3>สัญลักษณ์ในแถว Exchange</h3>
+  <table>
+    <tr><th style="width:30%">สัญลักษณ์</th><th>ความหมาย</th></tr>
+    <tr><td>🔒 รูปกุญแจ</td><td>มีข้อมูลลับถูกซ่อนไว้ใน Exchange นี้ (แสดงเป็น <code>••••</code>)</td></tr>
+    <tr><td>กรอบ "ไม่ได้ตรวจหาข้อมูลลับ"</td><td>body อ่านรูปแบบไม่ออก (เช่น text ธรรมดา, binary, JSON ที่ถูกตัด) จึงตรวจหาค่าลับไม่ได้ <b>ควรดูก่อนแสดงหน้าห้อง</b></td></tr>
+    <tr><td>"รอคำตอบ…"</td><td>ส่ง request ไปแล้ว ยังไม่ได้ response</td></tr>
+    <tr><td>"failed"</td><td>ไม่ได้คำตอบ เช่น เน็ตหลุดหรือถูกยกเลิก</td></tr>
+    <tr><td>(มี tracking N รายการที่ซ่อนอยู่)</td><td>คลิกนี้มี request ไป analytics/tracking ที่ถูกซ่อนไว้ ดูได้ด้วยปุ่ม "ซ่อน N รายการ"</td></tr>
+  </table>
+
+  <h3>Detail (คอลัมน์ขวา)</h3>
+  <ul>
+    <li><b>Flow strip</b> ด้านบนเล่นแอนิเมชัน ผู้ใช้ → click → เบราว์เซอร์ → request → เซิร์ฟเวอร์ → response กด <b>เล่นซ้ำ</b> เพื่อเล่นอีกครั้ง และเลือกความเร็ว <b>1x / 0.5x / 0.25x</b> ให้นักศึกษาตามทัน</li>
+    <li>ใต้ Flow strip คือ URL เต็ม, ประโยคสรุป และแท็บรายละเอียด (หัวข้อถัดไป)</li>
+    <li><b>Export Interaction นี้</b> ดาวน์โหลดเฉพาะคลิกนี้เป็นไฟล์ Recording</li>
+  </ul>
+  <div class="note"><b>ตามคลิกล่าสุด</b>: เมื่อติ๊กไว้ Detail จะเลือก Exchange หลักของคลิกล่าสุดให้เอง โดยให้ความสำคัญกับ request ที่เป็นการกระทำ
+  (เช่น <code>cart/add</code>, <code>login</code>, <code>delete</code>) มากกว่า request ที่แค่อ่านข้อมูล ถ้าเลือกแถวเองหรือเอาเครื่องหมายออก ระบบจะหยุดเลือกแทน</div>
+</section>
+
+<section>
+  <h2>5. แท็บใน Detail</h2>
+  <table>
+    <tr><th style="width:22%">แท็บ</th><th>ใช้สอนอะไร</th></tr>
+    <tr><td>ภาพรวม</td><td>สรุปทั้งขาออกและขาเข้าในหน้าเดียว: method, path, query, body ที่ส่ง และ status, content-type, body ที่ได้กลับ</td></tr>
+    <tr><td>ขาออก (Request)</td><td>header, query, cookie และ body ของ request (ค่าลับเป็น <code>••••</code>) body ที่เป็น JSON แสดงเป็นต้นไม้ กดพับ/กางได้ และกด "ดูข้อความดิบ" เพื่อดูแบบข้อความ</td></tr>
+    <tr><td>ขาเข้า (Response)</td><td>status, header และ body ของ response</td></tr>
+    <tr><td>ดิบ (Raw)</td><td>request และ response ในรูปแบบข้อความ HTTP ตามที่ส่งจริง (หลังซ่อนค่าลับแล้ว)</td></tr>
+    <tr><td>คลิก (Event)</td><td>element ที่ถูกคลิก, ข้อความบนปุ่ม, CSS selector, เวลาที่คลิก และระยะเวลาจากคลิกถึง request ออก</td></tr>
+    <tr><td>โค้ด</td><td>คัดลอก request นี้เป็น <b>curl</b>, <b>Python requests</b> หรือ <b>fetch</b> เพื่ออธิบายว่าเบราว์เซอร์ทำอะไร header ที่ถูกซ่อน (เช่น cookie) จะไม่ถูกใส่ลงในโค้ด</td></tr>
+  </table>
+  <div class="two" style="grid-template-columns:1fr">
+    <figure><img src="event.png" alt="แท็บคลิก"><figcaption>ภาพที่ 3 · แท็บ คลิก (Event)</figcaption></figure>
+    <figure><img src="code.png" alt="แท็บโค้ด"><figcaption>ภาพที่ 4 · แท็บ โค้ด</figcaption></figure>
+  </div>
+  <div class="note">curl ที่คัดลอกไปใช้ได้ใน bash, zsh หรือ Git Bash แต่ใช้ใน PowerShell ไม่ได้ เพราะ <code>curl</code> ของ PowerShell เป็นอีกคำสั่งหนึ่ง</div>
+
+  <h2 style="margin-top:24px">6. แถบเครื่องมือและปุ่มลัด</h2>
+  <table>
+    <tr><th style="width:26%">ปุ่ม</th><th>หน้าที่</th></tr>
+    <tr><td>สถานะ (จุดสี)</td><td>เขียว "เชื่อมต่อแล้ว · N แท็บ" / แดง "ไม่พบ Chrome" ถ้า Chrome หลุดจะมีแถบเหลืองแจ้ง และเชื่อมใหม่เอง ข้อมูลเดิมไม่หาย</td></tr>
+    <tr><td>ช่องเลือก Preset</td><td>ทุกเว็บ / advice.co.th / กำหนดเอง… (ดูหัวข้อ 7)</td></tr>
+    <tr><td>ตามคลิกล่าสุด</td><td>ให้ Detail เลือก Exchange หลักของคลิกล่าสุดอัตโนมัติ</td></tr>
+    <tr><td>ซ่อน N รายการ</td><td>สลับแสดง/ไม่แสดง Exchange ที่ถูกซ่อน พร้อมเหตุผล</td></tr>
+    <tr><td>หยุด / เก็บต่อ</td><td>หยุดเก็บชั่วคราวระหว่างอธิบาย (ปุ่มลัด <kbd>Space</kbd>)</td></tr>
+    <tr><td>ล้าง</td><td>ลบข้อมูลทั้งหมดออกจากหน้าจอและหน่วยความจำ (ปุ่มลัด <kbd>C</kbd>)</td></tr>
+    <tr><td>Export</td><td>ดาวน์โหลดทุกอย่างที่เก็บไว้เป็นไฟล์ Recording (.json)</td></tr>
+    <tr><td>A− / A+</td><td>ปรับขนาดตัวอักษร (สูงสุด 20 px) ให้คนท้ายห้องอ่านได้</td></tr>
+    <tr><td>ธีมมืด</td><td>สลับธีมสว่าง/มืด</td></tr>
+    <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>เลือก Exchange ก่อนหน้า/ถัดไปใน Timeline</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>7. Preset และ Exchange ที่ถูกซ่อน</h2>
+  <p>เว็บจริงมี request ไป analytics, โฆษณา และ tracking จำนวนมาก Inspector จึงซ่อนสิ่งที่ไม่เกี่ยวข้องให้ เพื่อให้เห็นเฉพาะ API ที่ควรสอน</p>
+  <ul>
+    <li><b>Blocklist พื้นฐาน</b> ซ่อนเสมอ เช่น google-analytics.com, googletagmanager.com, doubleclick.net, clarity.ms, facebook.com, analytics.tiktok.com</li>
+    <li><b>ทุกเว็บ</b> (<code>all</code>): แสดงทุกเว็บ ยกเว้น Blocklist พื้นฐาน</li>
+    <li><b>advice.co.th</b> (<code>advice</code>): แสดงเฉพาะ API ของ advice.co.th ที่เหลือถือว่า "นอกโฟกัส"</li>
+    <li><b>กำหนดเอง…</b>: กรอกกฎเองได้ทันทีโดยไม่ต้องแก้ไฟล์ กฎอยู่ในหน่วยความจำเท่านั้น ปิดโปรแกรมแล้วหาย</li>
+  </ul>
+  <figure><img src="custom.png" alt="ฟอร์ม preset กำหนดเอง"><figcaption>ภาพที่ 5 · ฟอร์ม preset "กำหนดเอง": คั่นหลายค่าด้วยจุลภาค แล้วกด "ใช้กฎนี้"</figcaption></figure>
+  <table>
+    <tr><th style="width:34%">ช่อง</th><th>ตัวอย่าง / ความหมาย</th></tr>
+    <tr><td>แสดงเฉพาะ host</td><td><code>www.example.com</code> แสดงเฉพาะ request ไปเว็บนี้</td></tr>
+    <tr><td>แสดงเฉพาะ path ที่ขึ้นต้นด้วย</td><td><code>/api/</code></td></tr>
+    <tr><td>ซ่อน host เพิ่ม / ซ่อน path เพิ่ม</td><td><code>ads.example.com</code>, <code>/beacon</code></td></tr>
+    <tr><td>key ที่ต้องซ่อนค่าเพิ่ม</td><td><code>sku</code> ซ่อนค่าของ key นี้เพิ่มจากค่าลับมาตรฐาน (เพิ่มได้อย่างเดียว ลดไม่ได้)</td></tr>
+  </table>
+  <p>Preset แบบไฟล์อยู่ในโฟลเดอร์ <code>presets/</code> (เช่น <code>advice.json</code>) ใช้ตอนเริ่มโปรแกรมด้วย <code>--preset ชื่อไฟล์</code></p>
+
+  <h3>ดูสิ่งที่ถูกซ่อน</h3>
+  <p>กดปุ่ม <b>ซ่อน N รายการ</b> แถวที่ถูกซ่อนจะแสดงเป็นสีจางพร้อมป้ายเหตุผล เช่น <code>tracking: region1.google-analytics.com</code> หรือ <code>นอกโฟกัส: preset advice</code>
+  เหมาะกับการสอนว่าเว็บหนึ่งหน้าส่งข้อมูลไปที่อื่นมากแค่ไหน</p>
+  <figure><img src="hidden.png" alt="แสดงรายการที่ถูกซ่อน"><figcaption>ภาพที่ 6 · เปิดดู Exchange ที่ถูกซ่อน: <code>/g/collect</code> ไป google-analytics</figcaption></figure>
+</section>
+
+<section>
+  <h2>8. Export และเปิดไฟล์ Recording</h2>
+  <ul>
+    <li>กด <b>Export</b> บนแถบเครื่องมือเพื่อดาวน์โหลดทุก Interaction เป็นไฟล์ <code>.json</code> หรือกด <b>Export Interaction นี้</b> ใน Detail เพื่อเอาเฉพาะคลิกเดียว</li>
+    <li>ค่าลับถูกซ่อนตั้งแต่ก่อนเก็บ ไฟล์ Recording จึงไม่มี cookie หรือ token จริง</li>
+    <li>เปิดไฟล์ดูย้อนหลังได้โดยไม่ต้องต่อ Chrome และไม่ส่ง request ใดๆ ออกไป:</li>
+  </ul>
+<pre>python -m inspector --replay-file รอบซ้อม.json</pre>
+  <p>สถานะด้านบนจะขึ้นว่า <b>Open Recording: &lt;ชื่อไฟล์&gt;</b> และปุ่มหยุด/ล้างจะถูกซ่อน ถ้าไฟล์มาจาก Inspector รุ่นเก่า ระบบจะซ่อนค่าลับให้อีกรอบตอนเปิด</p>
+  <div class="note">ควรเตรียม Recording ของรอบซ้อมไว้เสมอ เผื่อเน็ตในห้องมีปัญหา หรือเว็บเปลี่ยนหน้าตาในวันสอน</div>
+
+  <h2 style="margin-top:24px">9. ตัวเลือก command line</h2>
+  <table>
+    <tr><th style="width:24%">Option</th><th style="width:26%">ค่าเริ่มต้น</th><th>ความหมาย</th></tr>
+    <tr><td><code>--cdp-url</code></td><td><code>http://127.0.0.1:9222</code></td><td>ที่อยู่ CDP ของ Chrome ที่จะดู</td></tr>
+    <tr><td><code>--port</code></td><td><code>8000</code></td><td>พอร์ตของหน้า Inspector (เปิดเฉพาะ 127.0.0.1)</td></tr>
+    <tr><td><code>--preset</code></td><td><code>all</code></td><td>Preset ตอนเริ่ม เช่น <code>advice</code></td></tr>
+    <tr><td><code>--window-ms</code></td><td><code>1500</code></td><td>ช่วงเวลาหลังคลิก (ms) ที่นับ Exchange เป็นผลของคลิกนั้น</td></tr>
+    <tr><td><code>--max-exchanges</code></td><td><code>500</code></td><td>จำนวน Exchange สูงสุดในหน่วยความจำ เกินแล้วตัวเก่าสุดหลุดออก</td></tr>
+    <tr><td><code>--no-open</code></td><td>ปิด</td><td>ไม่เปิดหน้า Inspector ให้อัตโนมัติ</td></tr>
+    <tr><td><code>--demo</code></td><td>ปิด</td><td>ป้อนข้อมูลตัวอย่างแทน Chrome สำหรับลองหน้าจอ</td></tr>
+    <tr><td><code>--replay-file</code></td><td>ไม่มี</td><td>เปิดไฟล์ Recording ดูย้อนหลัง</td></tr>
+    <tr><td><code>--launch-chrome</code></td><td>ปิด</td><td>หา Chrome ในเครื่องแล้วเปิดโหมด debug ให้ (โปรไฟล์แยก)</td></tr>
+  </table>
+  <p><code>--demo</code>, <code>--replay-file</code> และ <code>--launch-chrome</code> ใช้พร้อมกันไม่ได้</p>
+</section>
+
+<section>
+  <h2>10. ความปลอดภัยและข้อมูลลับ</h2>
+  <div class="warn"><b>ใครก็ตามที่เข้าถึงพอร์ต debug 9222 ได้ ควบคุม Chrome ตัวนั้นได้ทั้งหมด</b> ทั้งอ่าน cookie, เปิดหน้าเว็บ และกดปุ่มแทนเรา</div>
+  <ul>
+    <li>เปิด Chrome ด้วย <code>--remote-debugging-address=127.0.0.1</code> เสมอ (สคริปต์และ <code>--launch-chrome</code> ใส่ให้แล้ว) ห้ามเปลี่ยนเป็น <code>0.0.0.0</code></li>
+    <li>อย่าเปิดพอร์ตนี้ใน firewall และอย่าใช้ Chrome ตัวนี้ล็อกอินบัญชีส่วนตัว</li>
+    <li>ปิด Chrome ตัวนี้เมื่อสอนเสร็จ</li>
+    <li>หน้า Inspector เปิดเฉพาะ <code>127.0.0.1</code> เครื่องอื่นในแลบเข้าไม่ได้ ถ้าจะให้ทุกคนดูให้ฉายจอแทน</li>
+  </ul>
+
+  <h3>อะไรถูกซ่อนบ้าง</h3>
+  <p>Inspector ซ่อนค่าลับ<b>ก่อนเก็บ</b> จึงไม่มีค่าจริงหลุดไปที่หน้าจอ, ไฟล์ Export หรือโค้ดที่คัดลอก ครอบคลุม</p>
+  <ul>
+    <li>header เช่น <code>Cookie</code>, <code>Set-Cookie</code>, <code>Authorization</code></li>
+    <li>ค่าใน query string, form, JSON และ multipart ที่ชื่อ key บอกว่าเป็นข้อมูลลับ เช่น password, token, secret, session, otp, card, phone, email, address</li>
+    <li>รหัสติดตามผู้ใช้ เช่น <code>_fbp</code>, <code>_ga</code>, <code>gclid</code>, <code>fbclid</code></li>
+    <li>JSON ที่ส่งเป็น text, JSON แบบคู่ชื่อ/ค่า (<code>{"name": "_fbp", "value": ...}</code>) และ JSON ที่ซ้อนอยู่ใน string</li>
+  </ul>
+  <p>body ที่อ่านรูปแบบไม่ออกจะมีป้าย <b>ไม่ได้ตรวจหาข้อมูลลับ</b> ให้เปิดดูเองก่อนฉายขึ้นจอ</p>
+
+  <h2 style="margin-top:24px">11. ข้อจำกัดที่ควรรู้</h2>
+  <h3>จับคู่คลิกกับ request ด้วยเวลา</h3>
+  <p>Chrome ไม่ได้บอกว่า request ไหนเกิดจากคลิกไหน Inspector จึงนับ Exchange ที่เริ่มภายใน <b>1500 ms</b> หลังคลิก (ปรับได้ด้วย <code>--window-ms</code>) ในแท็บเดียวกันเป็นผลของคลิกนั้น
+  ถ้าคลิกพาไปหน้าใหม่ ช่วงเวลาขยายต่ออีก 5 วินาทีนับจากตอนเปลี่ยนหน้า ผลคือ</p>
+  <ul>
+    <li>request เบื้องหลัง (analytics, polling) ที่บังเอิญเกิดในช่วงนั้นจะถูกนับรวมด้วย</li>
+    <li>request ที่เริ่มช้ากว่าช่วงเวลาจะไปอยู่ใน "เกิดเองโดยไม่มีคลิก"</li>
+    <li>คลิกถี่ๆ ติดกัน request ที่มาช้าของคลิกแรกอาจไปอยู่กับคลิกถัดไป</li>
+  </ul>
+  <p>ตอนสาธิตให้<b>คลิกทีละครั้งแล้วรอให้ Timeline นิ่ง</b>ก่อน</p>
+  <h3>อื่นๆ</h3>
+  <ul>
+    <li>ดักเฉพาะ fetch/XHR (การเรียก API) ไม่แสดงรูปภาพ, CSS หรือไฟล์ JavaScript</li>
+    <li>การอัปโหลดไฟล์ด้วย FormData: Chrome ไม่ส่ง body ให้ จึงแสดงข้อความแจ้งแทน body</li>
+    <li>เปลี่ยน Preset แล้ว การซ่อน/แสดงจะคำนวณใหม่ทันที แต่ "key ที่ต้องซ่อนค่าเพิ่ม" มีผลเฉพาะ Exchange ที่เกิดหลังจากนั้น ถ้าจะเพิ่ม key ให้ตั้งก่อนเริ่มคลิก หรือกด ล้าง แล้วทำใหม่</li>
+  </ul>
+</section>
+
+<section>
+  <h2>12. เคล็ดลับการสาธิตในห้อง</h2>
+  <h3>ก่อนเข้าห้อง</h3>
+  <ul>
+    <li>ซ้อมเส้นทางที่จะคลิกทั้งหมด แล้ว Export เก็บไว้เป็น Recording สำรอง</li>
+    <li>ใช้โปรไฟล์ Chrome แยก (สคริปต์ทำให้แล้ว) ถ้าต้องล็อกอินให้ใช้บัญชีสำหรับสาธิต</li>
+    <li>เลือก Preset ให้ตรงกับเว็บ เช่น <code>--preset advice</code> เพื่อตัด tracking ออก</li>
+  </ul>
+  <h3>ระหว่างสอน</h3>
+  <ul>
+    <li>วาง Chrome กับ Inspector ซ้าย-ขวา แล้วกด <b>A+</b> ให้คนท้ายห้องอ่านได้</li>
+    <li>คลิกทีละครั้ง รอให้ Timeline นิ่ง แล้วกด <kbd>Space</kbd> หยุดเก็บระหว่างอธิบาย</li>
+    <li>ใช้ Flow strip ความเร็ว 0.5x หรือ 0.25x ตอนอธิบายครั้งแรก</li>
+    <li>หยุดก่อนขั้นชำระเงินเสมอ และลบสินค้าออกจากตะกร้าหลังสาธิต (การลบก็เป็น request ที่น่าสอนอีกตัว)</li>
+  </ul>
+  <h3>ตัวอย่างลำดับการสอนบน advice.co.th</h3>
+  <ol class="steps">
+    <li>เปิดหน้าแรก: ดู "เปิดหน้า /" ว่าหน้าเว็บเรียก API อะไรบ้างตอนโหลด (เช่น <code>get-popup-home</code>, <code>cart/get</code>)</li>
+    <li>คลิกเมนูหมวดโน้ตบุ๊ก: ดู <code>product/category/data</code> และเปิด response ที่เป็น JSON</li>
+    <li>เข้าหน้าสินค้า → เพิ่มลงตะกร้า: Detail เลือก <code>cart/add</code> ให้เอง ดู body ขาออก (รหัสสินค้า, จำนวน) และคำตอบของเซิร์ฟเวอร์</li>
+    <li>เปิดแท็บ ขาออก ชี้ให้เห็นว่า cookie ถูกซ่อนเป็น <code>••••</code> และอธิบายว่าทำไมต้องซ่อน</li>
+    <li>กด "ซ่อน N รายการ" ให้ดูว่าเว็บส่งข้อมูลไป google-analytics, clarity ฯลฯ มากแค่ไหน</li>
+    <li>เปิดแท็บ โค้ด ให้ดูว่า request เดียวกันเขียนเป็น curl / Python ได้อย่างไร</li>
+    <li>ลบสินค้าออกจากตะกร้า แล้วดู request การลบ</li>
+  </ol>
+</section>
+
+<section>
+  <h2>13. แก้ปัญหาที่พบบ่อย</h2>
+  <table>
+    <tr><th style="width:34%">อาการ</th><th>วิธีแก้</th></tr>
+    <tr><td>ขึ้น "ไม่พบ Chrome" ตลอด</td><td>Chrome ที่เปิดอยู่ไม่ได้เปิดโหมด debug ให้เปิดด้วยสคริปต์ใน <code>scripts/</code> หรือคำสั่งที่หน้าจอให้คัดลอก หรือรัน <code>python -m inspector --launch-chrome</code>
+      (Chrome 136 ขึ้นไปไม่เปิดพอร์ต debug บนโปรไฟล์ปกติ จึงต้องใช้โปรไฟล์แยก)</td></tr>
+    <tr><td><i>running scripts is disabled</i> ใน PowerShell</td><td>รัน <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code> ครั้งเดียว</td></tr>
+    <tr><td>คลิกแล้วไม่มีอะไรขึ้น</td><td>ตรวจว่าคลิกใน Chrome ตัวที่เปิดโหมด debug (โปรไฟล์แยก) ไม่ใช่ Chrome ปกติ, ปุ่ม หยุด ไม่ได้ถูกกดค้างไว้, และ Preset ไม่ได้ซ่อนเว็บนั้น (ลองเลือก "ทุกเว็บ")</td></tr>
+    <tr><td>ปุ่มนั้นขึ้นว่า "ไม่มี API call"</td><td>ปกติ ปุ่มทำงานในเบราว์เซอร์อย่างเดียว เช่น เลื่อนรูปภาพ เปิดเมนู</td></tr>
+    <tr><td>request ไปอยู่ผิดคลิก</td><td>เป็นข้อจำกัดของการจับคู่ด้วยเวลา (หัวข้อ 11) คลิกช้าลง หรือปรับ <code>--window-ms</code></td></tr>
+    <tr><td>Chrome ปิดไประหว่างสอน</td><td>เปิด Chrome ใหม่ด้วยวิธีเดิม Inspector เชื่อมกลับเอง และข้อมูลเดิมยังอยู่</td></tr>
+    <tr><td>พอร์ต 8000 ถูกใช้อยู่</td><td>รันด้วยพอร์ตอื่น เช่น <code>python -m inspector --port 8080</code></td></tr>
+    <tr><td>อยากลองหน้าจอโดยไม่ต่อเน็ต</td><td><code>python -m inspector --demo</code> (สถานะจะขึ้น "ไม่พบ Chrome" เพราะไม่ได้ต่อ Chrome จริง) หรือเปิด Recording ด้วย <code>--replay-file</code></td></tr>
+  </table>
+
+  <div style="break-inside: avoid"><h3>ปิดงานหลังสอน</h3>
+  <ol class="steps">
+    <li>ลบสินค้าที่ใส่ตะกร้าระหว่างสาธิต</li>
+    <li>กด Export ถ้าต้องการเก็บไว้ใช้ครั้งหน้า</li>
+    <li>กด <kbd>Ctrl</kbd>+<kbd>C</kbd> ใน Terminal เพื่อปิด Inspector</li>
+    <li>ปิด Chrome ตัวที่เปิดโหมด debug</li>
+  </ol></div>
+</section>
+
+</body>
+</html>
