@@ -18,11 +18,12 @@ PAGE = """<!doctype html>
   form.append('username', 'สมชาย');
   form.append('password', '%s');
   fetch('/api/register', {method: 'POST', body: form});
-  // ฟอร์มที่แนบไฟล์: Chrome ไม่ส่ง body ให้ CDP เลย
+  // ฟอร์มที่แนบไฟล์: Chrome ไม่แนบ body มากับ event ต้องขอทีหลัง
   const upload = new FormData();
   upload.append('password', '%s');
   upload.append('avatar', new Blob([new Uint8Array([0x89, 0x50, 0xff, 0xfe])], {type: 'image/png'}), 'avatar.png');
-  fetch('/api/upload', {method: 'POST', body: upload});
+  // รอให้ Inspector เปิด CDP session ของแท็บใหม่ก่อน (ผู้ใช้จริงกดอัปโหลดหลังหน้าโหลดเสร็จอยู่แล้ว)
+  setTimeout(() => fetch('/api/upload', {method: 'POST', body: upload}), 500);
   fetch('/api/multipart-answer');
 </script></body></html>""" % (PASSWORD, PASSWORD)
 
@@ -76,9 +77,12 @@ def test_form_fields_are_redacted_part_by_part(chrome: ChromeProcess, site: str)
         assert "สมชาย" in body
         assert register["has_redactions"] is True
 
+        # ฟอร์มที่แนบไฟล์: Chrome ไม่แนบ body มากับ request แต่ขอทีหลังได้ (Network.getRequestPostData)
         upload = by_path["/api/upload"]["request"]
-        assert upload["body"] is None
-        assert upload["body_error"] == "Chrome ไม่ส่ง body ของฟอร์มที่แนบไฟล์มาให้ (multipart/form-data)"
+        assert upload["body_error"] is None and upload["body_kind"] == "multipart"
+        assert "[ไฟล์: avatar.png, image/png, 4 B]" in upload["body"]
+        assert 'name="password"\r\n\r\n••••' in upload["body"] and PASSWORD not in upload["body"]
+        assert by_path["/api/upload"]["has_redactions"] is True
         assert PASSWORD not in str(by_path["/api/upload"])
 
         answer = by_path["/api/multipart-answer"]["response"]
