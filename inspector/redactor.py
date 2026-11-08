@@ -14,6 +14,8 @@ from inspector.multipart import FormPart, parse_multipart
 
 REDACTED = "••••"
 SENSITIVE_KEY = re.compile(r"pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card", re.I)
+# รหัสติดตามผู้ใช้ข้ามเว็บ (Facebook, Google): ชื่อสั้นจึงต้องไม่มีตัวอักษรติดอยู่ เช่น `_ga`, `fb.fbp` แต่ไม่ใช่ `language`
+TRACKING_ID_KEY = re.compile(r"(?<![a-z])(?:fbp|fbc|fbclid|gclid|ga)(?![a-z])", re.I)
 SENSITIVE_HEADER_NAMES = frozenset({"cookie", "set-cookie", "authorization", "proxy-authorization"})
 SENSITIVE_HEADER_PART = re.compile(r"token|session|auth|csrf|key|secret", re.I)
 URL_HEADER_NAMES = frozenset({"referer", "location", "content-location"})
@@ -33,8 +35,8 @@ def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> 
 
 
 def is_sensitive_key(key: str) -> bool:
-    """key ใน JSON, form หรือ query ที่ต้องซ่อนค่า"""
-    return SENSITIVE_KEY.search(key) is not None
+    """key ใน JSON, form หรือ query ที่ต้องซ่อนค่า (ข้อมูลส่วนตัว ข้อมูลยืนยันตัวตน และรหัสติดตามผู้ใช้)"""
+    return SENSITIVE_KEY.search(key) is not None or TRACKING_ID_KEY.search(key) is not None
 
 
 def is_sensitive_header(name: str) -> bool:
@@ -55,7 +57,7 @@ class RedactedBody(NamedTuple):
 
 
 class Redactor:
-    """ซ่อนค่าลับใน headers, URL, query, JSON body และ form body
+    """ซ่อนค่าลับใน headers, URL, query, JSON body (รวม text ที่เป็น JSON), form body และ multipart body
 
     สอนแนวคิด: single responsibility — class นี้มีหน้าที่เดียวคือ "ทำให้ข้อมูลปลอดภัย"
     ทุกเมธอดรับค่าเดิมแล้วคืนค่าใหม่ ไม่แก้ของเดิม จึงทดสอบง่าย
@@ -105,7 +107,9 @@ class Redactor:
             return self._json_body(body)
         if kind == "multipart":
             return self._multipart_body(body, content_type)
-        return RedactedBody(body, unscanned=True)  # text หรือ binary: เดารูปแบบไม่ได้
+        if kind == "text":
+            return self._text_body(body)
+        return RedactedBody(body, unscanned=True)  # binary: เดารูปแบบไม่ได้
 
     def exchange(self, exchange: HttpExchange) -> HttpExchange:
         """ซ่อนค่าลับใน Exchange ทั้งตัว (ใช้กับ Exchange จากไฟล์ Recording) ค่าที่ซ่อนไว้แล้วคงเดิม"""
@@ -165,6 +169,20 @@ class Redactor:
             data = json.loads(body)
         except ValueError:
             return RedactedBody(body, unscanned=True)  # parse ไม่ได้: ส่งผ่านไป แต่บอกว่ายังไม่ได้ตรวจ
+        return self._parsed_json_body(body, data)
+
+    def _text_body(self, body: str) -> RedactedBody:
+        """text ที่จริงๆ เป็น JSON object หรือ array (เช่น sendBeacon ส่ง JSON เป็น text/plain) ตรวจด้วยกฎของ JSON
+        นอกนั้น (ข้อความธรรมดา, JSON ที่ถูกตัดที่ 64 KB, ค่าเดี่ยว) เดารูปแบบไม่ได้"""
+        try:
+            data = json.loads(body)
+        except ValueError:
+            return RedactedBody(body, unscanned=True)
+        if not isinstance(data, (dict, list)):
+            return RedactedBody(body, unscanned=True)
+        return self._parsed_json_body(body, data)
+
+    def _parsed_json_body(self, body: str, data: Any) -> RedactedBody:
         if not self._has_sensitive_key(data):
             return RedactedBody(body, unscanned=False)  # ไม่มีอะไรต้องซ่อน: คงรูปแบบเดิมไว้
         # เขียนใหม่จากค่าที่ parse แล้วเสมอ key ซ้ำในต้นฉบับจึงลักลอบส่งค่าจริงออกไปไม่ได้

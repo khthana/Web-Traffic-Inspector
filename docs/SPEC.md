@@ -116,6 +116,8 @@ Web Traffic Inspector คือโปรแกรม Python ที่เชื�
 - Headers: `cookie`, `set-cookie`, `authorization`, `proxy-authorization` และ header ที่ชื่อมี `token`, `session`, `auth`, `csrf`, `key`, `secret` → แทนด้วย `"•••• (ซ่อนไว้, 142 ตัวอักษร)"`  
 - สำหรับ cookie ให้แสดงชื่อ cookie ได้ แต่ซ่อนค่า เช่น `PHPSESSID=••••` เพื่อใช้สอนเรื่อง session ได้  
 - JSON body และ query string: key ที่ตรง regex `pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card` (ไม่สนตัวพิมพ์) → ซ่อนค่า ทำแบบ recursive  
+- รหัสติดตามผู้ใช้: key ที่มีคำ `fbp`, `fbc`, `fbclid`, `gclid`, `ga` โดยไม่มีตัวอักษรอื่นติด (เช่น `_fbp`, `fb.fbp`, `_ga_ABC` แต่ไม่ใช่ `language`) → ซ่อนค่าเช่นกัน  
+- body ชนิด text ที่ parse เป็น JSON object หรือ array ได้ (เช่น `navigator.sendBeacon` ส่ง JSON เป็น `text/plain`) ตรวจด้วยกฎของ JSON ส่วน text อื่นแสดงป้าย "ไม่ได้ตรวจหาข้อมูลลับ"  
 - รายการ key เพิ่มเติมกำหนดได้ใน `filters.json` (เพิ่มได้อย่างเดียว ลดรายการพื้นฐานไม่ได้)
 
 ### 4.5 สรุปภาษาคน (P0)
