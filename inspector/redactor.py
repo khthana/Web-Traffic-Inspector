@@ -1,0 +1,352 @@
+"""Redactor: ซ่อนข้อมูลลับก่อนที่ Exchange จะถูกเก็บ (ปิดไม่ได้)
+
+ค่าจริงไม่เคยถูกเก็บหรือส่งออกไป หน้า Inspector, export และ curl จึงเห็นแต่ `••••`
+"""
+
+import json
+import re
+from typing import Any, NamedTuple
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
+
+from inspector.http_parts import body_kind, describe_size, header
+from inspector.models import BodyKind, HttpExchange, Interaction
+from inspector.multipart import FormPart, parse_multipart
+
+REDACTED = "••••"
+SENSITIVE_KEY = re.compile(r"pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card", re.I)
+# รหัสติดตามผู้ใช้ข้ามเว็บ (Facebook, Google, Microsoft, TikTok): ชื่อสั้นจึงต้องเป็นคำทั้งคำในชื่อ key
+# เช่น `_ga`, `fb.fbp`, `gaClientId` แต่ไม่ใช่ `language` หรือ `mega`
+TRACKING_ID_WORDS = frozenset({"fbp", "fbc", "fbclid", "gclid", "gcl", "ga", "msclkid", "ttclid"})
+KEY_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")  # คำใน key: แยกที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase
+SENSITIVE_HEADER_NAMES = frozenset({"cookie", "set-cookie", "authorization", "proxy-authorization"})
+SENSITIVE_HEADER_PART = re.compile(r"token|session|auth|csrf|key|secret", re.I)
+URL_HEADER_NAMES = frozenset({"referer", "location", "content-location"})
+
+
+FILE_SUMMARY = re.compile(r"\[ไฟล์: [^\r\n]*, [^\r\n]*, \d+(?:\.\d)? (?:B|KB)\]")  # ทั้งเนื้อ part ต้องเป็นแบบนี้
+
+
+def to_valid_text(text: str) -> str:
+    """แทน byte ที่ไม่ใช่ UTF-8 (เก็บมาเป็น surrogate) ด้วย � ข้อความจึงส่งเป็น JSON ได้เสมอ"""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+# parse_json คืนค่าเหล่านี้เมื่อ parse ไม่ได้ (None แยกไม่ออกจาก JSON `null`)
+NOT_JSON = object()  # ไม่ใช่ JSON
+TOO_DEEP_JSON = object()  # อาจเป็น JSON แต่ซ้อนลึกเกินกว่าที่ Python parse ได้: ห้ามนับว่าเป็นข้อความธรรมดา
+BOM = chr(0xFEFF)  # byte order mark ที่บางเครื่องมือใส่ไว้หน้า JSON
+
+
+# JSON แบบคู่ชื่อ/ค่า: `{"name": "_fbp", "value": ...}` ชื่อ field อยู่ในค่าของ key บอกชื่อ
+PAIR_NAME_KEYS = frozenset({"name", "key", "field", "id"})
+PAIR_VALUE_KEYS = frozenset({"value", "val", "values", "content"})
+MAX_NESTED_JSON = 5  # JSON ที่ซ้อนเป็น string ได้กี่ชั้น เกินนี้ไม่ตรวจต่อและบอกว่า "ไม่ได้ตรวจหาข้อมูลลับ"
+
+
+def parse_json(text: str) -> Any:
+    """parse JSON (ข้าม BOM ข้างหน้า) parse ไม่ได้คืน NOT_JSON หรือ TOO_DEEP_JSON"""
+    try:
+        return json.loads(text.removeprefix(BOM))
+    except ValueError:
+        return NOT_JSON
+    except RecursionError:
+        return TOO_DEEP_JSON
+
+
+def looks_like_json_container(text: str) -> bool:
+    """string ที่น่าจะเป็น JSON object หรือ array (กรองก่อนลอง parse ทุก string)"""
+    return text.removeprefix(BOM).strip()[:1] in ("{", "[")
+
+
+class ScannedJson(NamedTuple):
+    """ผลของการเดินตรวจค่า JSON หนึ่งค่า
+
+    สอนแนวคิด: recursion — ผลของค่าชั้นในรวมขึ้นมาเป็นผลของชั้นนอก (มีอะไรถูกซ่อนหรือตรวจไม่ครบที่ไหนก็รู้ถึงชั้นบนสุด)
+    """
+
+    value: Any
+    redacted: bool  # มีค่าถูกซ่อน (ต้องเขียน JSON ใหม่)
+    unscanned: bool  # มีส่วนที่ซ้อนลึกเกิน MAX_NESTED_JSON จึงไม่ได้ตรวจ
+
+    @staticmethod
+    def kept(value: Any, unscanned: bool = False) -> "ScannedJson":
+        """ค่าเดิมที่ไม่มีอะไรถูกซ่อน"""
+        return ScannedJson(value, redacted=False, unscanned=unscanned)
+
+    @staticmethod
+    def combine(value: Any, parts: "list[ScannedJson]", redacted: bool = False) -> "ScannedJson":
+        """รวมผลของค่าชั้นในเป็นผลของค่าชั้นนอก"""
+        return ScannedJson(
+            value,
+            redacted=redacted or any(part.redacted for part in parts),
+            unscanned=any(part.unscanned for part in parts),
+        )
+
+    def as_text(self, original: str) -> str:
+        """ไม่มีอะไรถูกซ่อน: คืนข้อความเดิม (รูปแบบเดิม) ไม่งั้นเขียน JSON ใหม่จากค่าที่ซ่อนแล้ว
+        เขียนใหม่จากค่าที่ parse แล้วเสมอ key ซ้ำในต้นฉบับจึงลักลอบส่งค่าจริงออกไปไม่ได้"""
+        return json.dumps(self.value, ensure_ascii=False) if self.redacted else original
+
+
+def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> BodyKind:
+    """ชนิดของ body ใน Recording: รุ่นก่อนเก็บฟอร์ม multipart เป็น binary จึงดูจาก content-type ใหม่"""
+    return "multipart" if body_kind(headers, body) == "multipart" else kind
+
+
+def is_sensitive_key(key: str) -> bool:
+    """key ใน JSON, form หรือ query ที่ต้องซ่อนค่า (ข้อมูลส่วนตัว ข้อมูลยืนยันตัวตน และรหัสติดตามผู้ใช้)"""
+    return SENSITIVE_KEY.search(key) is not None or is_tracking_id_key(key)
+
+
+def is_tracking_id_key(key: str) -> bool:
+    """key ที่มีรหัสติดตามผู้ใช้เป็นคำหนึ่งในชื่อ (`_ga_ABC` → ga, abc และ `fbpValue` → fbp, value)"""
+    return any(word.lower() in TRACKING_ID_WORDS for word in KEY_WORD.findall(key))
+
+
+def is_sensitive_header(name: str) -> bool:
+    """header ที่ต้องซ่อนค่าทั้งก้อน (ชื่อที่ตรงกฎของ key ก็นับด้วย เช่น `X-Password`)"""
+    return (
+        name.lower() in SENSITIVE_HEADER_NAMES
+        or SENSITIVE_HEADER_PART.search(name) is not None
+        or is_sensitive_key(name)
+    )
+
+
+class RedactedBody(NamedTuple):
+    """ผลของการซ่อนค่าใน body"""
+
+    text: str | None
+    unscanned: bool  # True = เดารูปแบบไม่ได้ จึงไม่ได้ตรวจหาข้อมูลลับ
+    redacted: bool = False  # True = มีค่าลับใน body ถูกซ่อน (ย่อไฟล์แนบไม่นับ)
+
+
+class Redactor:
+    """ซ่อนค่าลับใน headers, URL, query, JSON body (รวม text ที่เป็น JSON), form body และ multipart body
+
+    สอนแนวคิด: single responsibility — class นี้มีหน้าที่เดียวคือ "ทำให้ข้อมูลปลอดภัย"
+    ทุกเมธอดรับค่าเดิมแล้วคืนค่าใหม่ ไม่แก้ของเดิม จึงทดสอบง่าย
+    และ immutable object — เพิ่ม key ที่ต้องซ่อนได้ด้วย `with_extra_keys` ซึ่งคืน Redactor ตัวใหม่
+    รายการพื้นฐานจึงลดไม่ได้
+    """
+
+    def __init__(self, extra_keys: tuple[str, ...] = ()) -> None:
+        self.extra_keys = tuple(key for key in extra_keys if key.strip())
+        pattern = "|".join(re.escape(key.strip()) for key in self.extra_keys)
+        self._extra = re.compile(pattern, re.I) if pattern else None
+
+    def with_extra_keys(self, keys: list[str] | tuple[str, ...]) -> "Redactor":
+        """Redactor ตัวใหม่ที่ซ่อน key เพิ่มจาก Preset (ไม่แตะ Exchange ที่เก็บไปแล้ว)"""
+        return Redactor(tuple(dict.fromkeys([*self.extra_keys, *keys])))
+
+    def is_sensitive_key(self, key: str) -> bool:
+        return is_sensitive_key(key) or (self._extra is not None and self._extra.search(key) is not None)
+
+    def headers(self, headers: dict[str, str]) -> dict[str, str]:
+        """ซ่อนค่าของ header ที่อ่อนไหว (cookie เหลือชื่อไว้ header ที่เป็น URL ซ่อนเฉพาะ query)"""
+        return {name: self._header_value(name, value) for name, value in headers.items()}
+
+    def url(self, url: str) -> str:
+        """ซ่อนค่าใน query, fragment และรหัสผ่านแบบ `user:pass@host`"""
+        parts = urlsplit(url)
+        netloc = parts.netloc
+        if parts.password is not None:
+            userinfo, _, host = netloc.rpartition("@")
+            netloc = f"{userinfo.partition(':')[0]}:{REDACTED}@{host}"
+        return urlunsplit(
+            parts._replace(netloc=netloc, query=self._pairs(parts.query), fragment=self._fragment(parts.fragment))
+        )
+
+    def query(self, query: dict[str, list[str]]) -> dict[str, list[str]]:
+        """ซ่อนค่าใน query ที่แยกเป็น dict แล้ว"""
+        return {key: [REDACTED] * len(values) if self.is_sensitive_key(key) else values for key, values in query.items()}
+
+    def body(self, body: str | None, kind: BodyKind, content_type: str) -> RedactedBody:
+        """ซ่อนค่าใน body ตามชนิดของมัน (multipart ต้องรู้ boundary จาก content-type)"""
+        if body is None or kind == "none":
+            return RedactedBody(body, unscanned=False)
+        if kind == "form":
+            text = self._pairs(body)
+            return RedactedBody(text, unscanned=False, redacted=text != body)
+        if kind == "json":
+            return self._json_body(body)
+        if kind == "multipart":
+            return self._multipart_body(body, content_type)
+        if kind == "text":
+            return self._text_body(body)
+        return RedactedBody(body, unscanned=True)  # binary: เดารูปแบบไม่ได้
+
+    def exchange(self, exchange: HttpExchange) -> HttpExchange:
+        """ซ่อนค่าลับใน Exchange ทั้งตัว (ใช้กับ Exchange จากไฟล์ Recording) ค่าที่ซ่อนไว้แล้วคงเดิม"""
+        request = exchange.request
+        request_kind = recorded_kind(request.body_kind, request.headers, request.body)
+        request_body = self.body(request.body, request_kind, header(request.headers, "content-type"))
+        redacted = request_body.redacted
+        response = exchange.response
+        if response is not None:
+            response_kind = recorded_kind(response.body_kind, response.headers, response.body)
+            response_body = self.body(response.body, response_kind, header(response.headers, "content-type"))
+            redacted = redacted or response_body.redacted
+            response = response.model_copy(
+                update={
+                    "headers": self.headers(response.headers),
+                    "body": response_body.text,
+                    "body_kind": response_kind,
+                    "body_unscanned": response_body.unscanned,
+                }
+            )
+        return exchange.model_copy(
+            update={
+                "page_url": self.url(exchange.page_url),
+                "request": request.model_copy(
+                    update={
+                        "url": self.url(request.url),
+                        "query": self.query(request.query),
+                        "headers": self.headers(request.headers),
+                        "body": request_body.text,
+                        "body_kind": request_kind,
+                        "body_unscanned": request_body.unscanned,
+                    }
+                ),
+                "response": response,
+                "has_redactions": exchange.has_redactions or redacted,
+            }
+        )
+
+    def interaction(self, interaction: Interaction) -> Interaction:
+        """ซ่อนค่าลับใน URL ทุกตัวของ Interaction (หน้า, ปลายทางที่เปิด, href ของ element ที่คลิก)"""
+        click = interaction.click
+        if click is not None:
+            href = click.element.href
+            element = click.element.model_copy(update={"href": None if href is None else self.url(href)})
+            click = click.model_copy(update={"page_url": self.url(click.page_url), "element": element})
+        navigated_to = interaction.navigated_to
+        return interaction.model_copy(
+            update={
+                "page_url": self.url(interaction.page_url),
+                "navigated_to": None if navigated_to is None else self.url(navigated_to),
+                "click": click,
+            }
+        )
+
+    def _json_body(self, body: str) -> RedactedBody:
+        data = parse_json(body)
+        if data is NOT_JSON or data is TOO_DEEP_JSON:
+            return RedactedBody(body, unscanned=True)  # parse ไม่ได้: ส่งผ่านไป แต่บอกว่ายังไม่ได้ตรวจ
+        return self._redact_parsed_json(body, data)
+
+    def _text_body(self, body: str) -> RedactedBody:
+        """text ที่จริงๆ เป็น JSON object หรือ array (เช่น sendBeacon ส่ง JSON เป็น text/plain) ตรวจด้วยกฎของ JSON
+        นอกนั้น (ข้อความธรรมดา, JSON ที่ถูกตัดที่ 64 KB, ค่าเดี่ยว) เดารูปแบบไม่ได้"""
+        data = parse_json(body)
+        if not isinstance(data, (dict, list)):
+            return RedactedBody(body, unscanned=True)
+        return self._redact_parsed_json(body, data)
+
+    def _redact_parsed_json(self, body: str, data: Any) -> RedactedBody:
+        """รับทั้งข้อความเดิมและค่าที่ parse แล้ว: ไม่มีอะไรต้องซ่อนก็คืนข้อความเดิม (รูปแบบเดิม) ไม่งั้นเขียนใหม่"""
+        try:
+            scanned = self._scan_json(data, depth=0)
+        except RecursionError:
+            return RedactedBody(body, unscanned=True)  # ลึกเกินกว่าจะเดินตรวจได้
+        return RedactedBody(scanned.as_text(body), unscanned=scanned.unscanned, redacted=scanned.redacted)
+
+    def _multipart_body(self, body: str, content_type: str) -> RedactedBody:
+        form = parse_multipart(body, content_type)
+        if form is None:
+            # parse ไม่ได้ (ผิดรูปหรือถูกตัดที่ 64 KB): บอกว่ายังไม่ได้ตรวจ และไม่ส่ง byte ที่ไม่ใช่ UTF-8 ต่อไป
+            return RedactedBody(to_valid_text(body), unscanned=True)
+        secret = any(self.is_sensitive_key(part.name) for part in form.parts)
+        # to_valid_text กันพลาดอีกชั้น: ไม่มีทางที่ byte ที่ไม่ใช่ UTF-8 จะไปถึง JSON ของ REST/WebSocket
+        return RedactedBody(to_valid_text(form.map_content(self._form_part)), unscanned=False, redacted=secret)
+
+    def _form_part(self, part: FormPart) -> str:
+        """เนื้อของ part ที่แสดงได้: field ลับเป็น ••••, ไฟล์แนบเหลือแค่ชื่อ ชนิด และขนาด"""
+        if self.is_sensitive_key(part.name):
+            return REDACTED
+        if part.is_plain_text:
+            return part.content
+        if FILE_SUMMARY.fullmatch(part.content):  # ย่อไว้แล้ว (เช่นมาจาก Recording)
+            return part.content
+        size = len(part.content.encode("utf-8", "surrogateescape"))
+        filename = part.filename or "ไม่มีชื่อไฟล์"
+        content_type = (part.content_type or "ไม่ทราบชนิด").split(";")[0].strip()
+        return f"[ไฟล์: {filename}, {content_type}, {describe_size(size)}]"
+
+    def _header_value(self, name: str, value: str) -> str:
+        lowered = name.lower()
+        if lowered == "cookie":
+            return "; ".join(self._cookie(part.strip()) for part in value.split(";") if part.strip())
+        if lowered == "set-cookie":
+            return "\n".join(self._set_cookie(line) for line in value.split("\n"))
+        if lowered in URL_HEADER_NAMES:
+            return self.url(value)
+        if is_sensitive_header(name) or self.is_sensitive_key(name):
+            if value.startswith(REDACTED):
+                return value  # ซ่อนไว้แล้ว (เช่นมาจาก Recording): ไม่ซ่อนซ้ำ จำนวนตัวอักษรจะได้ยังเป็นของค่าจริง
+            return f"{REDACTED} (ซ่อนไว้, {len(value)} ตัวอักษร)"
+        return value
+
+    @staticmethod
+    def _cookie(pair: str) -> str:
+        return f"{pair.partition('=')[0]}={REDACTED}"
+
+    def _set_cookie(self, line: str) -> str:
+        first, separator, attributes = line.partition(";")
+        return self._cookie(first.strip()) + separator + attributes
+
+    def _fragment(self, fragment: str) -> str:
+        """fragment อาจเป็น `a=1&b=2` (OAuth) หรือ `/route?a=1` (SPA)"""
+        route, separator, query = fragment.rpartition("?")
+        if separator:
+            return f"{route}?{self._pairs(query)}"
+        return self._pairs(fragment)
+
+    def _pairs(self, text: str) -> str:
+        """ซ่อนค่าใน `a=1&b=2` (query หรือ form) โดยคง encoding เดิมของส่วนที่ไม่ได้ซ่อน"""
+        pieces = []
+        for piece in text.split("&"):
+            raw_key, has_value, _ = piece.partition("=")
+            if has_value and self.is_sensitive_key(unquote_plus(raw_key)):
+                piece = f"{raw_key}={REDACTED}"
+            pieces.append(piece)
+        return "&".join(pieces)
+
+    def _scan_json(self, value: Any, depth: int) -> ScannedJson:
+        """เดินตรวจค่า JSON ทุกชั้น: key ลับ, คู่ชื่อ/ค่า และ string ที่เป็น JSON ซ้อนอยู่ (`depth` = ซ้อนเป็น string มาแล้วกี่ชั้น)"""
+        if isinstance(value, dict):
+            return self._scan_object(value, depth)
+        if isinstance(value, list):
+            items = [self._scan_json(item, depth) for item in value]
+            return ScannedJson.combine([item.value for item in items], items)
+        if isinstance(value, str) and looks_like_json_container(value):
+            return self._scan_nested_json(value, depth)
+        return ScannedJson.kept(value)
+
+    def _scan_object(self, value: dict[str, Any], depth: int) -> ScannedJson:
+        """object: ค่าของ key ลับถูกซ่อน และถ้า key บอกชื่อ (name, key, field, id) มีค่าเป็นชื่อที่อ่อนไหว
+        ค่าของ key บอกค่า (value, val, values, content) ใน object เดียวกันก็ถูกซ่อนด้วย"""
+        paired_secret = any(
+            key.lower() in PAIR_NAME_KEYS and isinstance(name, str) and self.is_sensitive_key(name)
+            for key, name in value.items()
+        )
+        result: dict[str, Any] = {}
+        parts: list[ScannedJson] = []
+        hidden = False
+        for key, item in value.items():
+            if self.is_sensitive_key(key) or (paired_secret and key.lower() in PAIR_VALUE_KEYS):
+                result[key], hidden = REDACTED, True
+                continue
+            scanned = self._scan_json(item, depth)
+            result[key] = scanned.value
+            parts.append(scanned)
+        return ScannedJson.combine(result, parts, redacted=hidden)
+
+    def _scan_nested_json(self, text: str, depth: int) -> ScannedJson:
+        """string ที่เป็น JSON อีกชั้น: ตรวจข้างใน ถ้ามีอะไรต้องซ่อนใส่กลับเป็น string ของ JSON ที่ซ่อนแล้ว"""
+        data = parse_json(text)
+        if data is TOO_DEEP_JSON or (isinstance(data, (dict, list)) and depth >= MAX_NESTED_JSON):
+            return ScannedJson.kept(text, unscanned=True)  # ซ้อนลึกเกิน: ไม่ตรวจต่อ แต่บอกว่ายังไม่ได้ตรวจ
+        if not isinstance(data, (dict, list)):
+            return ScannedJson.kept(text)  # ข้อความธรรมดาที่ขึ้นต้นด้วย { หรือ [
+        scanned = self._scan_json(data, depth + 1)
+        return ScannedJson(scanned.as_text(text), redacted=scanned.redacted, unscanned=scanned.unscanned)

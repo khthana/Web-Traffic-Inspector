@@ -1,0 +1,9 @@
+{
+  "label": "advice.co.th",
+  "focus_hosts": ["www.advice.co.th"],
+  "focus_path_prefixes": ["/_advice-api/", "/api/"],
+  "focus_resource_types": [],
+  "block_hosts": [],
+  "block_path_prefixes": [],
+  "redact_keys": []
+}

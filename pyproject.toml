@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+markers = ["chrome: ต้องมี Chrome จริงที่เปิดโหมด debug"]
+addopts = "-m 'not chrome'"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["inspector", "tests"]

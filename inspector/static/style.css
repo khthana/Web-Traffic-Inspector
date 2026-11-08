@@ -1,0 +1,476 @@
+/* Web Traffic Inspector — ออกแบบสำหรับจอโปรเจกเตอร์: ตัวใหญ่ สีมีความหมายน้อย มีตัวอักษรกำกับเสมอ */
+
+:root {
+  --font-size: 17px;
+  --bg: #ffffff;
+  --surface: #f5f6f8;
+  --fg: #1b1f27;
+  --muted: #5a6270;
+  --line: #d9dde3;
+  --ok: #146c2e;
+  --warn: #8a4b00;
+  --warn-bg: #fff4d6;
+  --highlight: #e3efff;
+  --bad: #b3261e;
+  --neutral: #4b5563;
+  --get: #0b57a8;
+  --post: #146c2e;
+  --put: #8a4b00;
+  --delete: #b3261e;
+  --badge-fg: #ffffff;
+  --other-method: #6b3fa0;
+  --json-key: #6b3fa0;
+  --json-string: #146c2e;
+  --json-number: #0b57a8;
+  --json-boolean: #8a4b00;
+  --json-null: #5a6270;
+  --font: "IBM Plex Sans Thai", "Sarabun", "Leelawadee UI", "Noto Sans Thai", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  --bg: #14171c;
+  --surface: #1d2129;
+  --fg: #e8ebf0;
+  --muted: #a3abb8;
+  --line: #333a45;
+  --ok: #4cc26a;
+  --warn: #f0a33a;
+  --warn-bg: #3a2c10;
+  --highlight: #1d3352;
+  --bad: #ff7a70;
+  --neutral: #9aa3b0;
+  --get: #5aa9ff;
+  --post: #4cc26a;
+  --put: #f0a33a;
+  --delete: #ff7a70;
+  --badge-fg: #111418;
+  --other-method: #c9a4ff;
+  --json-key: #c9a4ff;
+  --json-string: #4cc26a;
+  --json-number: #5aa9ff;
+  --json-boolean: #f0a33a;
+  --json-null: #a3abb8;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+html { font-size: var(--font-size); }  /* A−/A+ เปลี่ยนค่านี้ทั้งหน้า (rem ทุกตัวขยายตาม) */
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.5 var(--font);
+}
+
+.topbar {
+  min-height: 56px;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;  /* ตัวใหญ่บนจอเล็ก: ปุ่มขึ้นบรรทัดใหม่แทนการล้นออกนอกจอ */
+  align-items: center;
+  gap: .4rem 1.5rem;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-name { font-size: 1.15rem; margin: 0; }
+
+.chrome-status { display: flex; align-items: center; gap: .5rem; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-left: auto; }
+/* ปุ่มติดกันเป็นแถบเดียว (A− A+, ความเร็วของ Flow strip) */
+.segmented { display: inline-flex; }
+.segmented .tool-button { border-radius: 0; }
+.segmented .tool-button + .tool-button { border-left: none; }
+.segmented .tool-button:first-child { border-radius: 6px 0 0 6px; }
+.segmented .tool-button:last-child { border-radius: 0 6px 6px 0; }
+.tool-button:disabled { opacity: .45; cursor: default; }
+.toolbar select, .tool-button, .custom-filters button, .custom-filters input {
+  font: inherit;
+  padding: .3rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.tool-button { cursor: pointer; white-space: nowrap; }
+a.tool-button { text-decoration: none; }
+.chrome-status[data-mode="playback"] .dot { background: var(--get); }
+.export-one { margin-left: auto; font-size: .85em; color: var(--get); }
+.tool-button[aria-pressed="true"] { background: var(--surface); border-color: var(--muted); font-weight: 600; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.custom-filters { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.custom-filters h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.custom-filters .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem .8rem; }
+.custom-filters label { display: flex; flex-direction: column; gap: .2rem; font-size: .9em; color: var(--muted); }
+.custom-filters button { cursor: pointer; }
+.custom-filters .hint { color: var(--muted); font-size: .85em; font-weight: 400; }
+.form-error { color: var(--bad); font-weight: 600; }
+
+/* Hidden exchange: ซ่อนไว้จนกว่าจะเปิดปุ่ม "ซ่อน N รายการ" แล้วแสดงแบบจาง */
+.exchange.is-hidden { display: none; }
+.show-hidden .exchange.is-hidden { display: grid; opacity: .55; }
+.card.no-visible:not(.kind-click) { display: none; }
+.show-hidden .card.no-visible:not(.kind-click) { display: block; opacity: .7; }
+.hidden-reason {
+  grid-column: 2 / -1;  /* บรรทัดใหม่ใต้ path จะได้ไม่เบียด path */
+  justify-self: start;
+  font-size: .8em;
+  padding: .05rem .45rem;
+  border-radius: 999px;
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hidden-note { display: block; color: var(--muted); font-size: .85em; }
+.hidden-note:empty { display: none; }
+.chrome-status .dot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--bad); }
+.chrome-status[data-state="connected"] .dot { background: var(--ok); }
+.chrome-status[data-state="connected"][data-paused="true"] .dot { background: var(--warn); }
+
+.banner { padding: .4rem 16px; background: var(--surface); color: var(--muted); border-bottom: 1px solid var(--line); }
+.banner-ethics { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--fg); }
+.banner-ethics[hidden] { display: none; }
+.banner-warn { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+
+.chrome-setup { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; background: var(--surface); }
+.chrome-setup h3 { margin: 0 0 .4rem; }
+.chrome-setup .command {
+  margin: .6rem 0;
+  padding: .6rem .8rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--mono, monospace);
+  font-size: .85em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.chrome-setup button {
+  font: inherit;
+  padding: .3rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+.chrome-setup .hint { color: var(--muted); font-size: .9em; }
+.chrome-setup:not([hidden]) ~ .empty { display: none; }
+
+.layout { flex: 1; min-height: 0; display: flex; }
+
+.timeline {
+  position: relative;
+  width: 40%;
+  min-width: 360px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding: 12px 16px;
+}
+
+.detail { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+.column-title .shortcuts { float: right; letter-spacing: normal; }
+.column-title { font-size: .8rem; letter-spacing: .05em; color: var(--muted); margin: 0 0 .5rem; }
+
+.empty { color: var(--muted); }
+
+/* ปุ่มลอย "มี N รายการใหม่ ↑": ติดขอบบนของ Timeline ขณะผู้ใช้เลื่อนลงไปดูของเก่า (สูง 0 จึงไม่ดันเนื้อหา) */
+.new-items-dock { position: sticky; top: 0; height: 0; z-index: 2; display: flex; justify-content: center; overflow: visible; }
+.new-items {
+  font: inherit;
+  font-weight: 600;
+  padding: .3rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--get);
+  color: var(--badge-fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+  cursor: pointer;
+}
+
+/* Flow strip: ผู้ใช้ → เบราว์เซอร์ → เซิร์ฟเวอร์ (SPEC 6.5) เส้นและลูกศรอ่านทิศทางได้แม้ไม่มีแอนิเมชัน */
+.flow-strip {
+  min-height: 120px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+  padding: .5rem 0 .75rem;
+  margin-bottom: .75rem;
+  border-bottom: 1px solid var(--line);
+}
+.flow-strip[hidden] { display: none; }
+.flow-stage { flex: 1 1 480px; display: grid; grid-template-columns: auto minmax(3rem, 1fr) auto minmax(9rem, 2.5fr) auto; align-items: center; gap: .5rem; min-width: 0; }
+.flow-node {
+  padding: .4rem .7rem;
+  border: 2px solid var(--fg);
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+  font-size: .9em;
+  line-height: 1.3;
+}
+.flow-host { font-family: var(--mono); font-weight: 400; font-size: .85em; overflow-wrap: anywhere; }  /* ขึ้นบรรทัดใหม่ที่ <wbr> หลังจุดก่อน ตัดกลางคำเฉพาะส่วนที่ยาวกว่ากล่อง */
+.flow-strip[data-from-click="false"] [data-node="user"],
+.flow-strip[data-from-click="false"] [data-step="click"] { opacity: .35; }
+.flow-pair { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.flow-lane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .3rem;
+  min-width: 0;
+}
+/* เส้นทางวิ่ง + หัวลูกศร (ขาออกชี้ขวา ขากลับชี้ซ้าย) */
+.flow-lane::after {
+  content: "";
+  align-self: stretch;
+  height: 0;
+  border-top: 2px solid var(--muted);
+}
+.flow-lane::before {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  right: -2px;
+  border: 6px solid transparent;
+  border-left: 9px solid var(--muted);
+}
+.flow-lane-back { flex-direction: column-reverse; }
+.flow-lane-back::before { top: -5px; bottom: auto; right: auto; left: -2px; border-left-color: transparent; border-right: 9px solid var(--muted); }
+.flow-label { font: 600 .9em var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.flow-label .badge { font-size: .95em; }
+[data-step="request"] .flow-label { display: flex; gap: .5em; }
+.flow-path { direction: rtl; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* จุด/ซองจดหมายที่วิ่ง: มองไม่เห็นจนกว่า FlowStrip จะเล่นแอนิเมชัน */
+.flow-token { position: absolute; left: 0; top: calc(100% - .45rem); opacity: 0; color: var(--fg); pointer-events: none; }
+/* ซองขากลับสีเดียวกับ badge ของ status (ขาไปยังไม่รู้ status จึงเป็นสีตัวอักษรปกติ) */
+.flow-strip[data-status="2xx"] [data-step="response"] .flow-token { color: var(--ok); }
+.flow-strip[data-status="3xx"] [data-step="response"] .flow-token { color: var(--neutral); }
+.flow-strip[data-status="4xx"] [data-step="response"] .flow-token { color: var(--warn); }
+.flow-strip[data-status="5xx"] [data-step="response"] .flow-token { color: var(--bad); }
+.flow-lane-back .flow-token { top: auto; bottom: calc(100% - .45rem); }
+.flow-dot { width: .8rem; height: .8rem; margin-top: .05rem; border-radius: 50%; background: currentColor; }
+.flow-envelope svg { display: block; width: 1.6rem; height: auto; }
+.flow-controls { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; margin-left: auto; }
+.flow-speed .tool-button { font-size: .85em; padding: .2rem .5rem; }
+@media (prefers-reduced-motion: reduce) {
+  .flow-token { display: none; }
+}
+/* จอมือถือ: กล่องและเส้นทางเล็กลงให้พอดีจอ */
+@media (max-width: 600px) {
+  .flow-stage { flex-basis: 100%; gap: .3rem; grid-template-columns: auto minmax(1.5rem, 1fr) auto minmax(4.5rem, 2.5fr) auto; }
+  .flow-node { padding: .3rem .35rem; font-size: .75em; }
+  .flow-label { font-size: .75em; }
+  .flow-controls { flex-direction: row; align-items: center; }
+}
+
+.detail-back { display: none; align-self: flex-start; margin: 8px 16px 0; }
+
+.exchange-list { list-style: none; margin: 0; padding: 0; }
+
+.card-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 4px; background: var(--bg); }
+.card.is-new { animation: card-arrive 1.5s ease-out; }
+@keyframes card-arrive {
+  from { background: var(--highlight); border-color: var(--get); }
+  to { background: var(--bg); border-color: var(--line); }
+}
+.card.kind-background { background: var(--surface); }
+.card.kind-background .card-head { color: var(--muted); }
+
+.card-head { display: flex; align-items: flex-start; gap: .5rem; padding-bottom: 4px; min-width: 0; }
+.card-icon { display: inline-flex; color: var(--muted); }
+.card-title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }  /* ขึ้นบรรทัดใหม่ได้ อ่านครบบนจอโปรเจกเตอร์ */
+.card-meta { color: var(--muted); font-size: .85em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.no-calls { display: none; color: var(--muted); font-size: .9em; padding: 4px 0 6px; }
+.card.no-visible .no-calls { display: block; }
+/* การ์ดที่เพิ่งเกิด: รอให้ครบ Correlation window (JS ตั้งค่าจาก status) จะได้ไม่กะพริบก่อน Exchange มาถึง */
+.card.is-new.no-visible .no-calls { animation: appear-later var(--correlation-window, 1.5s) step-end; }
+@keyframes appear-later { from { visibility: hidden; } to { visibility: visible; } }
+
+.exchange {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: .6rem;
+  align-items: center;
+  padding: .45rem .5rem;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.exchange:hover { background: var(--surface); }
+.exchange[aria-selected="true"] { background: var(--highlight); box-shadow: inset 4px 0 var(--get); }
+.exchange:focus-visible { outline: 2px solid var(--get); outline-offset: -2px; }
+.exchange .summary { grid-column: 2 / -1; color: var(--muted); font-size: .85em; margin-top: -.35rem; }
+
+.exchange .path {
+  font-family: var(--mono);
+  font-size: .9em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;          /* ตัดให้สั้นจากซ้าย ส่วนท้ายของ path สำคัญกว่า */
+  text-align: left;
+}
+
+.flags { display: inline-flex; align-items: center; gap: .35rem; }
+.flag-lock { color: var(--muted); display: inline-flex; }
+.flag-unscanned {
+  font-size: .75em;
+  padding: 0 .4em;
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.exchange .ms { color: var(--muted); font-size: .85em; font-variant-numeric: tabular-nums; }
+
+.badge {
+  display: inline-block;
+  min-width: 3.6em;
+  padding: .05em .45em;
+  border-radius: 4px;
+  font: 600 .8em var(--mono);
+  text-align: center;
+  color: var(--badge-fg);
+  background: var(--neutral);
+}
+
+.badge.method { background: var(--other-method); }
+.badge.method-GET { background: var(--get); }
+.badge.method-POST { background: var(--post); }
+.badge.method-PUT, .badge.method-PATCH { background: var(--put); }
+.badge.method-DELETE { background: var(--delete); }
+
+.badge.status-2xx { background: var(--ok); }
+.badge.status-3xx { background: var(--neutral); }
+.badge.status-4xx { background: var(--warn); }
+.badge.status-5xx { background: var(--bad); }
+.badge.status-failed { background: transparent; color: var(--bad); border: 2px dashed var(--bad); }
+.badge.status-pending { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
+/* ---------- Detail ---------- */
+.detail-head { padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
+.detail-line { display: flex; align-items: center; gap: .6rem; }
+.detail-line .ms, .detail-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+.detail-url { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; margin: .4rem 0; }
+.detail-summary { font-size: 1.25em; font-weight: 600; margin: 0; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin: .75rem 0; }
+.tab {
+  font: inherit;
+  padding: .35rem .8rem;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--get); }
+
+.tab-panel h3 { font-size: 1em; margin: 1rem 0 .4rem; }
+.tab-panel h4 { font-size: .9em; color: var(--muted); margin: .8rem 0 .3rem; font-weight: 600; }
+.request-line, .status-line { font: 600 1em var(--mono); overflow-wrap: anywhere; margin: 0; }
+
+.overview { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.side { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 0; }
+.side h3 { margin-top: 0; }
+.field-list { margin: 0; }
+.field-list .field { display: grid; grid-template-columns: 7.5em 1fr; gap: .5rem; padding: .15rem 0; }
+.field-list dt { color: var(--muted); }
+.click-info .field { grid-template-columns: 11em 1fr; }  /* ป้าย "คลิก → request ออก" ยาวกว่า */
+.field-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.kv-table { border-collapse: collapse; width: 100%; font-size: .9em; }
+.kv-table th, .kv-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: .2rem .5rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.kv-table th { font-weight: 700; white-space: nowrap; }
+.kv-table td:first-child { font-weight: 600; }
+.headers-table .flag-lock { margin-right: .3rem; vertical-align: -.1em; }
+
+.body-note { color: var(--muted); margin: .3rem 0; }
+.body-view .flag-unscanned { display: inline-block; margin: 0 0 .4rem; }
+.raw-body, .raw-http {
+  font: .9em/1.45 var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  margin: .3rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-block { margin: 0 0 1rem; }
+.code-hint { display: inline; margin-left: .6rem; color: var(--muted); font-size: .85em; }
+.code-snippet {
+  font: .9em/1.45 var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  margin: .4rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.json-viewer { position: relative; font: .9em/1.6 var(--mono); }
+.raw-toggle {
+  font: .8em var(--font);
+  float: right;
+  cursor: pointer;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: .1rem .5rem;
+}
+.json-tree, .json-children { list-style: none; margin: 0; padding: 0; }
+.json-children { padding-left: 1.2em; border-left: 1px dotted var(--line); margin-left: .3em; }
+.json-branch > summary { cursor: pointer; }
+.json-key { color: var(--json-key); }
+.json-string { color: var(--json-string); overflow-wrap: anywhere; }
+.json-number { color: var(--json-number); }
+.json-boolean { color: var(--json-boolean); font-weight: 600; }
+.json-null, .json-empty { color: var(--json-null); font-style: italic; }
+.json-count, .json-more { color: var(--muted); }
+.json-redacted {
+  display: inline-block;
+  padding: 0 .5em;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font: .85em var(--font);
+}
+
+.tool-check { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; cursor: pointer; }
+.tool-check input { width: 1.1em; height: 1.1em; }
+
+/* จอแคบ: Timeline และ Detail ซ้อนกัน เลือก Exchange แล้ว Detail เปิดเต็มจอ มีปุ่มย้อนกลับ */
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  .overview { grid-template-columns: 1fr; }
+  .timeline { flex: 1; width: auto; min-width: 0; border-right: none; }
+  .layout:not(.detail-open) .detail { display: none; }
+  .layout.detail-open .timeline { display: none; }
+  .layout.detail-open .detail-back { display: inline-block; }
+}

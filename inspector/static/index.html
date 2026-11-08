@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web Traffic Inspector</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='7' cy='7' r='4.5' fill='none' stroke='%230b57a8' stroke-width='2'/%3E%3Cpath d='M10.5 10.5 14 14' stroke='%230b57a8' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&family=JetBrains+Mono&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="app-name">Web Traffic Inspector</h1>
+    <div class="chrome-status" id="chrome-status" data-state="disconnected">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label">ไม่พบ Chrome</span>
+    </div>
+    <div class="toolbar">
+      <label class="preset-picker">
+        <span class="visually-hidden">Preset การกรอง</span>
+        <select id="preset" title="Preset การกรอง"></select>
+      </label>
+      <label class="tool-check" title="เมื่อคลิกบนเว็บ ให้ Detail เปิด Exchange หลักของคลิกนั้นเอง">
+        <input type="checkbox" id="follow-clicks" checked> ตามคลิกล่าสุด
+      </label>
+      <button type="button" class="tool-button" id="hidden-toggle" aria-pressed="false"
+        title="แสดง/ซ่อน Exchange ที่ถูกกรองออก (tracking และนอกโฟกัส)">ซ่อน 0 รายการ</button>
+      <button type="button" class="tool-button" id="pause-toggle" aria-pressed="false"
+        title="หยุดเก็บชั่วคราวระหว่างอธิบาย (คีย์ลัด Space)">หยุด</button>
+      <button type="button" class="tool-button" id="clear" title="ล้าง Timeline ทั้งหมด (คีย์ลัด C)">ล้าง</button>
+      <a class="tool-button" id="export" href="/api/export" download
+        title="ดาวน์โหลด Recording (JSON ที่ซ่อนค่าลับแล้ว) ของทั้ง session">Export</a>
+      <div class="font-size segmented" role="group" aria-label="ขนาดตัวอักษร">
+        <button type="button" class="tool-button" id="font-smaller" title="ตัวอักษรเล็กลง">A−</button>
+        <button type="button" class="tool-button" id="font-bigger" title="ตัวอักษรใหญ่ขึ้น">A+</button>
+      </div>
+      <button type="button" class="tool-button" id="theme-toggle" title="สลับธีมสว่าง/มืด">ธีมมืด</button>
+    </div>
+  </header>
+
+  <div class="banner banner-ethics" id="ethics-banner" role="note" hidden>
+    <span>ใช้ดู traffic ของตัวเองเพื่อการเรียนรู้เท่านั้น อย่านำ API ของเว็บอื่นไปเรียกซ้ำหรือดึงข้อมูลจำนวนมาก</span>
+    <button type="button" class="tool-button" id="ethics-close">รับทราบ ปิด</button>
+  </div>
+  <div class="banner" id="socket-banner" role="status" hidden>กำลังเชื่อมต่อ Inspector ใหม่…</div>
+  <div class="banner banner-warn" id="paused-banner" role="status" hidden>
+    หยุดเก็บชั่วคราว — กด Space เพื่อเริ่มต่อ
+  </div>
+  <div class="banner banner-warn" id="chrome-banner" role="status" hidden>
+    Chrome หลุดการเชื่อมต่อ — ข้อมูลเดิมยังอยู่ครบ กำลังลองเชื่อมใหม่อัตโนมัติ
+  </div>
+
+  <form class="custom-filters" id="custom-filters" hidden>
+    <h3>กฎของ preset "กำหนดเอง" <span class="hint">อยู่ในหน่วยความจำเท่านั้น ปิดโปรแกรมแล้วหาย</span></h3>
+    <div class="fields">
+      <label>แสดงเฉพาะ host <input name="focus_hosts" placeholder="www.example.com"></label>
+      <label>แสดงเฉพาะ path ที่ขึ้นต้นด้วย <input name="focus_path_prefixes" placeholder="/api/"></label>
+      <label>ซ่อน host เพิ่ม <input name="block_hosts" placeholder="ads.example.com"></label>
+      <label>ซ่อน path เพิ่ม <input name="block_path_prefixes" placeholder="/beacon"></label>
+      <label>key ที่ต้องซ่อนค่าเพิ่ม (เพิ่มได้อย่างเดียว) <input name="redact_keys" placeholder="sku"></label>
+    </div>
+    <p class="hint">คั่นหลายค่าด้วยจุลภาค · Blocklist พื้นฐานที่ซ่อนเสมอ: <span id="base-blocklist"></span></p>
+    <p class="form-error" id="custom-error" role="alert" hidden></p>
+    <button type="submit">ใช้กฎนี้</button>
+    <button type="button" id="custom-close">ปิด</button>
+  </form>
+
+  <main class="layout">
+    <section class="timeline" aria-label="Timeline">
+      <h2 class="column-title">TIMELINE · ใหม่สุดอยู่บน <span class="shortcuts">↑/↓ เลือก · Space หยุด · C ล้าง</span></h2>
+      <div class="chrome-setup" id="chrome-setup" hidden>
+        <h3>ไม่พบ Chrome ที่เปิดโหมด debug</h3>
+        <p>วางคำสั่งนี้ใน Terminal (Windows ใช้ PowerShell) เพื่อเปิด Chrome ด้วยโปรไฟล์แยกสำหรับสอน ไม่ต้องปิด Chrome ตัวเดิม:</p>
+        <pre class="command"><code id="chrome-command"></code></pre>
+        <button type="button" id="copy-command">คัดลอกคำสั่ง</button>
+        <p class="hint">Inspector จะเชื่อมให้เองภายในไม่กี่วินาทีหลัง Chrome เปิด</p>
+      </div>
+      <div class="new-items-dock">
+        <button type="button" class="new-items" id="new-items" hidden></button>
+      </div>
+      <p class="empty" id="timeline-empty">พร้อมแล้ว — ลองเปิดเว็บใน Chrome แล้วกดปุ่มสักปุ่ม</p>
+      <ol class="card-list" id="timeline"></ol>
+    </section>
+    <button type="button" class="tool-button detail-back" id="detail-back">← กลับไป Timeline</button>
+    <section class="detail" id="detail" aria-label="Detail">
+      <section class="flow-strip" id="flow-strip" aria-label="Flow strip: จังหวะของ HTTP" data-from-click="true" hidden>
+        <div class="flow-stage">
+          <div class="flow-node" data-node="user">ผู้ใช้</div>
+          <div class="flow-lane" data-step="click">
+            <span class="flow-label"></span>
+            <span class="flow-token flow-dot"></span>
+          </div>
+          <div class="flow-node" data-node="browser">เบราว์เซอร์<br>(JavaScript)</div>
+          <div class="flow-pair">
+            <div class="flow-lane" data-step="request">
+              <span class="flow-label"></span>
+              <span class="flow-token flow-envelope"><svg viewBox="0 0 24 16" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="14" rx="2" fill="currentColor"/><path d="M2 2l10 7 10-7" fill="none" stroke="var(--bg)" stroke-width="1.6"/></svg></span>
+            </div>
+            <div class="flow-lane flow-lane-back" data-step="response">
+              <span class="flow-token flow-envelope"><svg viewBox="0 0 24 16" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="14" rx="2" fill="currentColor"/><path d="M2 2l10 7 10-7" fill="none" stroke="var(--bg)" stroke-width="1.6"/></svg></span>
+              <span class="flow-label"></span>
+            </div>
+          </div>
+          <div class="flow-node" data-node="server">เซิร์ฟเวอร์<br><span class="flow-host"></span></div>
+        </div>
+        <div class="flow-controls">
+          <button type="button" class="tool-button" id="flow-again" title="เล่นแอนิเมชันอีกครั้ง (ไม่ได้ส่ง request ใหม่)">เล่นซ้ำ</button>
+          <div class="flow-speed segmented" role="group" aria-label="ความเร็วแอนิเมชัน"><!-- ปุ่ม 1x / 0.5x / 0.25x สร้างจาก FLOW_SPEEDS ใน app.js --></div>
+        </div>
+      </section>
+      <div id="detail-body"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
