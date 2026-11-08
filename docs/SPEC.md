@@ -118,6 +118,8 @@ Web Traffic Inspector คือโปรแกรม Python ที่เชื�
 - JSON body และ query string: key ที่ตรง regex `pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card` (ไม่สนตัวพิมพ์) → ซ่อนค่า ทำแบบ recursive  
 - รหัสติดตามผู้ใช้: key ที่มีคำ `fbp`, `fbc`, `fbclid`, `gclid`, `gcl`, `ga`, `msclkid`, `ttclid` เป็นคำทั้งคำ (แยกคำที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase เช่น `_fbp`, `fb.fbp`, `_ga_ABC`, `gaClientId` แต่ไม่ใช่ `language`, `mega`) → ซ่อนค่าเช่นกัน  
 - body ชนิด text ที่ parse เป็น JSON object หรือ array ได้ (เช่น `navigator.sendBeacon` ส่ง JSON เป็น `text/plain`) ตรวจด้วยกฎของ JSON ส่วน text อื่นแสดงป้าย "ไม่ได้ตรวจหาข้อมูลลับ"  
+- JSON แบบคู่ชื่อ/ค่า: object ที่ค่าของ `name`, `key`, `field` หรือ `id` เป็นชื่อที่อ่อนไหว (เช่น `{"name": "_fbp", "value": …}`) → ซ่อนค่าของ `value`, `val`, `values`, `content` ที่อยู่คู่กัน  
+- string ใน JSON ที่เป็น JSON object หรือ array อีกชั้น ตรวจด้วยกฎเดียวกันแล้วใส่กลับเป็น string (ซ้อนได้ไม่เกิน 5 ชั้น เกินนั้นแสดงป้าย "ไม่ได้ตรวจหาข้อมูลลับ")  
 - รายการ key เพิ่มเติมกำหนดได้ใน `filters.json` (เพิ่มได้อย่างเดียว ลดรายการพื้นฐานไม่ได้)
 
 ### 4.5 สรุปภาษาคน (P0)
