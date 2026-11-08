@@ -5,7 +5,7 @@ from typing import Any
 
 from conftest import Harness, build_harness
 
-from inspector.capture_events import ClickCaptured, RequestStarted
+from inspector.capture_events import ClickCaptured, RequestStarted, ResponseReceived
 from inspector.filters import PRESETS_DIR, load_presets
 from inspector.models import ElementInfo
 
@@ -178,8 +178,10 @@ def test_extra_redaction_keys_can_only_be_added(harness: Harness) -> None:
     put_filters(harness, {"selected": "custom", "rules": {"redact_keys": ["sku"]}})
     harness.feed(request(SEARCH, body='{"sku": "NB-002"}'))
 
-    assert json.loads(exchanges(harness)[CART]["request"]["body"]) == {"sku": "NB-001"}  # ใช้กับของใหม่เท่านั้น
+    assert json.loads(exchanges(harness)[CART]["request"]["body"]) == {"sku": "••••"}  # ของที่เก็บไว้แล้วก็ถูกซ่อนด้วย
+    assert exchanges(harness)[CART]["has_redactions"] is True
     assert json.loads(exchanges(harness)[SEARCH]["request"]["body"]) == {"sku": "••••"}
+    assert "NB-001" not in json.dumps(harness.get("/api/export"))
 
     filters = put_filters(harness, {"selected": "custom", "rules": {"redact_keys": []}})
     assert filters["rules"]["redact_keys"] == ["sku"]  # ลดไม่ได้
@@ -228,3 +230,18 @@ def test_other_clients_learn_that_custom_rules_changed(harness: Harness) -> None
     before = harness.get("/api/status")["filters_version"]
     put_filters(harness, {"selected": "custom", "rules": {"focus_hosts": ["api.other.example"]}})
     assert harness.get("/api/status")["filters_version"] > before
+
+
+def test_extra_redaction_key_also_hides_a_request_still_waiting_for_its_response(harness: Harness) -> None:
+    waiting = request(CART, body='{"sku": "NB-001"}')
+    harness.feed(waiting)
+    put_filters(harness, {"selected": "custom", "rules": {"redact_keys": ["sku"]}})
+    harness.feed(
+        ResponseReceived(
+            request_key=waiting.request_key, ts=T0 + 50, status=200, status_text="OK",
+            headers={"content-type": "application/json"}, body='{"sku": "NB-001", "ok": true}',
+        )
+    )
+    exchange = exchanges(harness)[CART]
+    assert json.loads(exchange["request"]["body"]) == {"sku": "••••"}
+    assert json.loads(exchange["response"]["body"]) == {"sku": "••••", "ok": True}

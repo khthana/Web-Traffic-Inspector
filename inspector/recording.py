@@ -23,11 +23,30 @@ def read_recording(path: Path) -> Recording:
     except (OSError, UnicodeDecodeError) as error:
         raise ValueError(f"อ่านไฟล์ {path.name} ไม่ได้: {error}") from error
     try:
-        return Recording.model_validate_json(text)
+        recording = Recording.model_validate_json(text)
     except ValidationError as error:
         raise ValueError(
             f"{path.name} ไม่ใช่ Recording ของ Web Traffic Inspector ({error.error_count()} จุดที่ไม่ตรงรูปแบบ)"
         ) from error
+    # id ซ้ำทำให้ตัวหลังทับตัวแรกเงียบๆ: บอกผู้สอนดีกว่าแสดงข้อมูลไม่ครบ
+    for kind, ids in (
+        ("Interaction", [interaction.id for interaction in recording.interactions]),
+        ("Exchange", [exchange.id for exchange in recording.exchanges]),
+    ):
+        repeated = first_repeated(ids)
+        if repeated is not None:
+            raise ValueError(f"{path.name} มี {kind} id ซ้ำ ({repeated}): ไฟล์อาจถูกแก้ด้วยมือหรือรวมมาจากหลายไฟล์")
+    return recording
+
+
+def first_repeated(ids: list[str]) -> str | None:
+    """id ตัวแรกที่เคยเจอมาแล้ว (ไม่ซ้ำเลย → None)"""
+    seen: set[str] = set()
+    for item in ids:
+        if item in seen:
+            return item
+        seen.add(item)
+    return None
 
 
 def download_name(recording: Recording, interaction_id: str | None) -> str:

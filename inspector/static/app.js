@@ -337,6 +337,7 @@ class StatusView {
 
   label(status) {
     if (isPlayback(status)) return `Open Recording: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
+    if (status.mode === "demo") return "โหมดตัวอย่าง (--demo)"; // ข้อมูลปลอม ไม่ได้ต่อ Chrome โดยตั้งใจ
     if (status.chrome !== "connected") return "ไม่พบ Chrome";
     return status.paused ? "หยุดชั่วคราว" : `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`;
   }
@@ -353,11 +354,11 @@ class ChromeHelpView {
   }
 
   show(status) {
-    // Recording playback ไม่ต่อ Chrome โดยตั้งใจ จึงไม่ต้องสอนวิธีเปิด Chrome หรือเตือนว่าหลุด
-    const connected = status.chrome === "connected" || isPlayback(status);
+    // Recording playback และ --demo ไม่ต่อ Chrome โดยตั้งใจ จึงไม่ต้องสอนวิธีเปิด Chrome หรือเตือนว่าหลุด
+    const connected = status.chrome === "connected" || isPlayback(status) || status.mode === "demo";
     if (connected) this.wasConnected = true;
     this.setup.querySelector("#chrome-command").textContent = status.chrome_launch_command;
-    this.setup.hidden = connected || !status.chrome_launch_command; // โหมด --demo ไม่ต้องใช้ Chrome
+    this.setup.hidden = connected || !status.chrome_launch_command;
     this.banner.hidden = connected || !this.wasConnected;
   }
 

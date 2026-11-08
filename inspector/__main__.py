@@ -95,6 +95,7 @@ async def run(args: argparse.Namespace, filters: FilterSettings, recording: Reco
             print(f"Recording มี Exchange เกินเพดาน {args.max_exchanges} ตัว: ไม่แสดง {dropped} ตัวที่เก่าที่สุด"
                   " (เพิ่ม --max-exchanges ได้)")
     elif args.demo:
+        pipeline.start_demo()
         background.append(asyncio.create_task(feed_demo_events(pipeline)))
     else:
         # หน้า Inspector เองไม่ใช่ Watched tab (กันไม่ให้ดัก traffic ของตัวเอง)

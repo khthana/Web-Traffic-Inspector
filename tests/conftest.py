@@ -58,14 +58,20 @@ class Harness:
 
 @contextmanager
 def build_harness(
-    max_exchanges: int = 500, preset: str = "all", recording: Recording | None = None, recording_file: str = ""
+    max_exchanges: int = 500,
+    preset: str = "all",
+    recording: Recording | None = None,
+    recording_file: str = "",
+    demo: bool = False,
 ) -> Iterator[Harness]:
-    """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges`, `--preset` และ `--replay-file`)"""
+    """ประกอบ Inspector ทั้งตัวด้วยค่าที่เลือกได้ (เหมือน CLI `--max-exchanges`, `--preset`, `--replay-file` และ `--demo`)"""
     store = EventStore(max_exchanges=max_exchanges)
     broadcaster = Broadcaster()
     pipeline = new_pipeline(store, broadcaster, preset, chrome_launch_command("http://127.0.0.1:9222"))
     if recording is not None:
         pipeline.play(recording, recording_file)
+    if demo:
+        pipeline.start_demo()
     app = create_app(pipeline=pipeline, store=store, broadcaster=broadcaster)
     with TestClient(app) as client:
         yield Harness(client, pipeline)

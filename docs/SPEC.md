@@ -405,23 +405,35 @@ web-traffic-inspector/
 ├─ inspector/
 │  ├─ __main__.py        # อ่าน CLI args, ประกอบทุก object, รัน uvicorn + capture บน loop เดียว
 │  ├─ models.py          # Pydantic models (หัวข้อ 5)
-│  ├─ chrome.py          # ChromeConnector
-│  ├─ capture.py         # TrafficCapture, ClickTracker
+│  ├─ capture_events.py  # Capture event: ข้อมูลล้วนที่ฝั่ง capture ส่งให้ pipeline
+│  ├─ chrome.py          # ChromeConnector + คำสั่งเปิด Chrome ตาม OS
+│  ├─ chrome_launcher.py # --launch-chrome: หา Chrome ในเครื่องแล้วเปิดโหมด debug
+│  ├─ capture.py         # TrafficCapture
+│  ├─ click_tracker.py   # ClickTracker
 │  ├─ click_hook.js      # สคริปต์ที่ฉีดเข้าหน้าเว็บ
-│  ├─ filters.py         # FilterRule + subclasses, FilterChain
+│  ├─ filters.py         # FilterRule + subclasses, FilterChain, Preset
 │  ├─ redactor.py        # Redactor
+│  ├─ multipart.py       # แยก body multipart/form-data ให้ Redactor
+│  ├─ http_parts.py      # ฟังก์ชันช่วยแยก URL และชนิดของ body
 │  ├─ correlator.py      # Correlator
 │  ├─ summarizer.py      # Summarizer (สรุปภาษาคน)
+│  ├─ code_snippets.py   # แท็บโค้ด: curl / Python requests / fetch
+│  ├─ pipeline.py        # InspectorPipeline: capture → filter → redact → correlate → store → broadcast
 │  ├─ store.py           # EventStore
 │  ├─ broadcaster.py     # Broadcaster (จัดการ WebSocket clients)
-│  ├─ app.py             # FastAPI app factory: create_app(store, broadcaster, ...)
+│  ├─ recording.py       # อ่านไฟล์ Recording, ตั้งชื่อไฟล์ export
+│  ├─ demo.py            # --demo: ป้อน Capture event ตัวอย่าง
+│  ├─ clock.py           # นาฬิกา epoch ms (ADR 0001)
+│  ├─ app.py             # FastAPI app factory: create_app(pipeline, store, broadcaster)
 │  └─ static/            # index.html, app.js, style.css
 ├─ presets/
 │  ├─ all.json
 │  └─ advice.json
 ├─ scripts/start_chrome.bat, start_chrome.command
-├─ tests/               # pytest
-├─ requirements.txt
+├─ tests/               # pytest (`-m chrome` = test ที่เปิด Chrome จริง)
+├─ docs/                # SPEC.md, adr/, specs/, คู่มือการใช้งาน.pdf (ต้นฉบับใน guide/)
+├─ CONTEXT.md           # ศัพท์ของโปรเจกต์
+├─ requirements.txt, requirements-dev.txt, pyproject.toml
 └─ README.md            # ภาษาไทย
 ```
 

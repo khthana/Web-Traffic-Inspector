@@ -125,7 +125,7 @@ class InspectorStatus(BaseModel):
     tabs: list[TabInfo] = []
     chrome_launch_command: str = ""  # คำสั่งเปิด Chrome โหมด debug ตาม OS ของเครื่องนี้
     correlation_window_ms: float = 1500  # UI ใช้รอก่อนบอกว่าคลิกนี้ "ไม่มี API call"
-    mode: Literal["live", "playback"] = "live"
+    mode: Literal["live", "playback", "demo"] = "live"  # demo: ข้อมูลตัวอย่างจาก --demo ไม่ต่อ Chrome
     recording_file: str | None = None
 
 
