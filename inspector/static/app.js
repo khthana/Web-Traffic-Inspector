@@ -349,16 +349,22 @@ class ChromeHelpView {
     this.banner.hidden = connected || !this.wasConnected;
   }
 
-  async copyCommand() {
-    const button = this.setup.querySelector("#copy-command");
-    try {
-      await navigator.clipboard.writeText(this.setup.querySelector("#chrome-command").textContent);
-      button.textContent = "คัดลอกแล้ว ✓";
-    } catch {
-      button.textContent = "คัดลอกไม่ได้ — เลือกข้อความเองนะ";
-    }
-    setTimeout(() => { button.textContent = "คัดลอกคำสั่ง"; }, 2000);
+  copyCommand() {
+    return copyText(this.setup.querySelector("#copy-command"), this.setup.querySelector("#chrome-command").textContent);
   }
+}
+
+/** คัดลอกข้อความลง clipboard แล้วให้ปุ่มบอกผลสักครู่ ก่อนกลับเป็นข้อความเดิม */
+async function copyText(button, text) {
+  const label = button.dataset.label ?? button.textContent;
+  button.dataset.label = label; // กดซ้ำระหว่างที่ปุ่มยังบอกผลอยู่ จะได้ไม่จำ "คัดลอกแล้ว ✓" เป็นข้อความเดิม
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "คัดลอกแล้ว ✓";
+  } catch {
+    button.textContent = "คัดลอกไม่ได้ — เลือกข้อความเองนะ";
+  }
+  setTimeout(() => { button.textContent = label; }, 2000);
 }
 
 const LOCK_ICON = `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" focusable="false">
@@ -655,7 +661,18 @@ const DETAIL_TABS = [
   { id: "response", label: "ขาเข้า (Response)", render: (view) => view.responsePanel() },
   { id: "raw", label: "ดิบ (Raw)", render: (view) => view.rawPanel() },
   { id: "click", label: "คลิก (Event)", render: (view) => view.clickPanel() },
+  { id: "code", label: "โค้ด", render: (view) => view.codePanel() },
 ];
+
+/** โค้ดหนึ่งภาษา: ปุ่ม Copy as … + ตัวโค้ด (เลือกข้อความเองก็ได้ถ้าคัดลอกไม่ได้) */
+function codeBlock(snippet) {
+  const button = el("button", "tool-button copy-code", snippet.label);
+  button.type = "button";
+  button.addEventListener("click", () => copyText(button, snippet.code));
+  const code = el("pre", "code-snippet", snippet.code);
+  code.dataset.language = snippet.language;
+  return el("section", "code-block", button, code);
+}
 
 
 /** ขาออกและขาเข้าหน้าตาเหมือนกัน: บรรทัดแรก + headers + body */
@@ -775,6 +792,16 @@ class DetailView {
       definitionRow("คลิกเมื่อ", clockTime(click.ts)),
       definitionRow("คลิก → request ออก", el("span", "click-delay", `${Math.round(this.exchange.started_at - click.ts)} ms`)),
     )];
+  }
+
+  /** โค้ดสร้างที่ server (GET /api/exchanges/{id}/code) จาก Exchange ที่ผ่าน Redaction แล้ว ไม่มี header ที่ถูกซ่อน */
+  codePanel() {
+    const panel = el("div", "code-panel", el("p", "body-note", "กำลังเตรียมโค้ด…"));
+    fetch(`/api/exchanges/${encodeURIComponent(this.exchange.id)}/code`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(response.statusText))))
+      .then((snippets) => panel.replaceChildren(...snippets.map(codeBlock)))
+      .catch(() => panel.replaceChildren(el("p", "body-note", "โหลดโค้ดไม่ได้ (Exchange นี้อาจถูกล้างไปแล้ว)")));
+    return [panel];
   }
 
   requestSide() {

@@ -2,3 +2,5 @@
 pytest>=8
 httpx2
 mypy>=1.10
+requests>=2.31  # test รันโค้ด "Copy as Python requests" จริง
+types-requests

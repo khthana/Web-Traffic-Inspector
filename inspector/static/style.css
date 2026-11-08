@@ -338,6 +338,18 @@ a.tool-button { text-decoration: none; }
   overflow-wrap: anywhere;
 }
 
+.code-block { margin: 0 0 1rem; }
+.code-snippet {
+  font: .9em/1.45 var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  margin: .4rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .json-viewer { position: relative; font: .9em/1.6 var(--mono); }
 .raw-toggle {
   font: .8em var(--font);

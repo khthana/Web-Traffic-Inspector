@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from inspector.broadcaster import Broadcaster
-from inspector.models import FilterUpdate, FilterView, HttpExchange, InspectorStatus, Recording
+from inspector.code_snippets import code_snippets
+from inspector.models import CodeSnippet, FilterUpdate, FilterView, HttpExchange, InspectorStatus, Recording
 from inspector.pipeline import InspectorPipeline
 from inspector.recording import download_name
 from inspector.store import EventStore
@@ -46,6 +47,11 @@ def create_app(pipeline: InspectorPipeline, store: EventStore, broadcaster: Broa
         if exchange is None:
             raise HTTPException(status_code=404, detail="ไม่พบ Exchange นี้ (อาจถูกล้างไปแล้ว)")
         return exchange
+
+    @app.get("/api/exchanges/{exchange_id}/code")
+    def get_code(exchange_id: str) -> list[CodeSnippet]:
+        """แท็บ "โค้ด": Copy as curl / Python requests / JavaScript fetch (ไม่มี header และค่าที่ถูกซ่อน)"""
+        return code_snippets(get_exchange(exchange_id))
 
     @app.get("/api/export", response_model=Recording)
     def export(interaction_id: str | None = None) -> JSONResponse:

@@ -81,6 +81,17 @@ class HttpExchange(BaseModel):
     interaction_id: str | None = None
 
 
+CodeLanguage = Literal["curl", "python", "fetch"]
+
+
+class CodeSnippet(BaseModel):
+    """โค้ดหนึ่งภาษาในแท็บ "โค้ด" ที่ส่ง request ของ Exchange เดิมได้ (ไม่มีค่าที่ถูกซ่อน)"""
+
+    language: CodeLanguage
+    label: str  # ข้อความบนปุ่มคัดลอก เช่น "Copy as curl"
+    code: str
+
+
 class Interaction(BaseModel):
     """กลุ่มของ Exchange ที่มีสาเหตุร่วมกัน"""
 
