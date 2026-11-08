@@ -44,6 +44,7 @@ def test_windows_script_has_windows_line_endings() -> None:
 def test_mac_script_is_executable_shell() -> None:
     assert MAC_SCRIPT.read_bytes().startswith(b"#!/bin/sh\n")
     assert b"\r" not in MAC_SCRIPT.read_bytes()
+    assert "nohup" in words(MAC_SCRIPT)  # ปิดหน้าต่าง Terminal แล้ว Chrome ไม่ปิดตาม
     mode = subprocess.run(
         ["git", "ls-files", "--stage", str(MAC_SCRIPT)], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout
@@ -75,6 +76,8 @@ def test_readme_covers_what_a_new_student_needs() -> None:
         "127.0.0.1",
         "1500",  # correlation window: จับคู่ด้วยเวลา
         "--replay-file",
+        "Export",  # ชื่อปุ่มบนหน้าจอจริง
+        "ExecutionPolicy",  # PowerShell มักบล็อก Activate.ps1 บนเครื่องใหม่
     ):
         assert must in readme, must
     assert readme.count("- [ ]") >= 10  # checklist ทดสอบกับเว็บจริง (SPEC 9.2)

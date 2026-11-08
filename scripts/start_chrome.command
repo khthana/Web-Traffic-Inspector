@@ -11,7 +11,8 @@ if [ ! -x "$CHROME" ]; then
   exit 1
 fi
 
-"$CHROME" \
+# nohup: ปิดหน้าต่าง Terminal นี้แล้ว Chrome ยังเปิดอยู่
+nohup "$CHROME" \
   --remote-debugging-port=9222 \
   --remote-debugging-address=127.0.0.1 \
   --user-data-dir="$HOME/.traffic-inspector-profile" \

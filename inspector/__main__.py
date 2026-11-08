@@ -67,7 +67,7 @@ def launch_chrome_for(cdp_url: str, launcher: ChromeLauncher) -> None:
     executable = launcher.launch(cdp_url)
     if executable is None:
         print("ไม่พบ Chrome ในเครื่อง: ติดตั้ง Google Chrome หรือเปิดเองด้วยคำสั่งนี้")
-        print("  " + chrome_launch_command(cdp_url, launcher.system))
+        print("  " + launcher.manual_command(cdp_url))
     else:
         print(f"เปิด Chrome โหมด debug แล้ว ({executable})")
 
@@ -114,15 +114,15 @@ async def run(args: argparse.Namespace, filters: FilterSettings, recording: Reco
             task.cancel()
 
 
-def main() -> None:
-    args = build_parser().parse_args()
-    if args.launch_chrome:
-        launch_chrome_for(args.cdp_url, ChromeLauncher(platform.system(), os.environ, Path.home()))
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     try:
         filters = FilterSettings(load_presets(PRESETS_DIR), selected=args.preset)
         recording = read_recording(args.replay_file) if args.replay_file else None
     except ValueError as error:
         raise SystemExit(str(error)) from error
+    if args.launch_chrome:  # เปิด Chrome หลังตรวจ argument ผ่านแล้ว ไม่ให้เหลือ Chrome ค้างเมื่อพิมพ์ผิด
+        launch_chrome_for(args.cdp_url, ChromeLauncher(platform.system(), os.environ, Path.home()))
     try:
         asyncio.run(run(args, filters, recording))
     except KeyboardInterrupt:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from inspector.__main__ import build_parser, launch_chrome_for
+from inspector.__main__ import build_parser, launch_chrome_for, main
 from inspector.chrome_launcher import ChromeLauncher
 
 WINDOWS_ENV = {
@@ -114,3 +114,17 @@ def test_launch_chrome_cannot_be_combined_with_modes_that_do_not_use_chrome(othe
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--launch-chrome", *other])
     assert build_parser().parse_args(["--launch-chrome"]).launch_chrome
+
+
+def test_manual_command_is_for_the_same_os_and_port() -> None:
+    windows = launcher("Windows", set(), WINDOWS_ENV)
+    assert windows.manual_command("http://127.0.0.1:9333").startswith("& ")  # PowerShell
+    assert "--remote-debugging-port=9333" in windows.manual_command("http://127.0.0.1:9333")
+
+
+def test_bad_arguments_stop_the_program_before_chrome_opens(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened = launcher("Darwin", {MAC_CHROME})
+    monkeypatch.setattr("inspector.__main__.ChromeLauncher", lambda *args: opened)
+    with pytest.raises(SystemExit):
+        main(["--launch-chrome", "--preset", "ไม่มี-preset-นี้"])
+    assert isinstance(opened.spawn, Spawned) and opened.spawn.commands == []

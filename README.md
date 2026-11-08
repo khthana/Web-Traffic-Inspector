@@ -6,7 +6,7 @@ Inspector ต่อเข้ากับ Chrome ของผู้สอนผ�
 
 - ดูอย่างเดียว: ไม่แก้ ไม่บล็อก และไม่ส่ง request ซ้ำ
 - ซ่อนค่าลับ (cookie, token, password ฯลฯ) เป็น `••••` ก่อนเก็บเสมอ ปิดไม่ได้
-- ไม่เขียนอะไรลงดิสก์เอง ไฟล์ Recording จะมีก็ต่อเมื่อกดดาวน์โหลดเท่านั้น
+- ไม่เขียนอะไรลงดิสก์เอง ไฟล์ Recording จะมีก็ต่อเมื่อกดปุ่ม Export เท่านั้น
 
 > ใช้ดู traffic ของตัวเองเพื่อการเรียนรู้เท่านั้น อย่านำ API ของเว็บอื่นไปเรียกซ้ำหรือดึงข้อมูลจำนวนมาก
 
@@ -20,6 +20,12 @@ Windows (PowerShell):
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+ถ้า PowerShell ขึ้นว่า running scripts is disabled ตอนรัน `Activate.ps1` ให้รันคำสั่งนี้ครั้งเดียวแล้วลองใหม่
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 macOS (Terminal):
@@ -57,7 +63,7 @@ python -m inspector --preset advice  # เริ่มด้วย preset ขอ
 
 - Timeline (ซ้าย): แต่ละคลิกเป็นหนึ่งก้อน พร้อม Exchange ที่เกิดจากคลิกนั้น
 - Detail (ขวา): Flow strip ด้านบนเล่นแอนิเมชัน คลิก → request → response แล้วมีแท็บ ภาพรวม, ขาออก, ขาเข้า, คลิก, ดิบ และโค้ด (คัดลอกเป็น curl, Python หรือ fetch)
-- แถบด้านบน: เลือก Preset, หยุดเก็บชั่วคราว (Space), ล้าง (C), สลับแสดง Exchange ที่ถูกซ่อน, ปรับขนาดตัวอักษร (A− / A+), สลับธีม และดาวน์โหลด Recording
+- แถบด้านบน: เลือก Preset, หยุดเก็บชั่วคราว (Space), ล้าง (C), สลับแสดง Exchange ที่ถูกซ่อน, ปรับขนาดตัวอักษร (A− / A+), สลับธีม และปุ่ม Export สำหรับดาวน์โหลด Recording
 
 แนะนำให้วางหน้าต่าง Chrome กับ Inspector ซ้าย-ขวาบนจอโปรเจกเตอร์
 

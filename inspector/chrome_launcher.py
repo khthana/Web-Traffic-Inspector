@@ -9,9 +9,14 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from urllib.parse import urlsplit
-
-from inspector.chrome import DEFAULT_CDP_PORT, PROFILE_NAME_POSIX, PROFILE_NAME_WINDOWS, START_URL, debug_flags
+from inspector.chrome import (
+    PROFILE_NAME_POSIX,
+    PROFILE_NAME_WINDOWS,
+    START_URL,
+    cdp_port,
+    chrome_launch_command,
+    debug_flags,
+)
 
 Spawn = Callable[[Sequence[str]], object]
 
@@ -68,8 +73,11 @@ class ChromeLauncher:
         return self.home / PROFILE_NAME_POSIX
 
     def command(self, executable: str, cdp_url: str) -> list[str]:
-        port = urlsplit(cdp_url).port or DEFAULT_CDP_PORT
-        return [executable, *debug_flags(port, str(self.profile_dir())), START_URL]
+        return [executable, *debug_flags(cdp_port(cdp_url), str(self.profile_dir())), START_URL]
+
+    def manual_command(self, cdp_url: str) -> str:
+        """คำสั่งให้ผู้ใช้คัดลอกไปเปิดเองใน terminal ของ OS นี้ (ใช้เมื่อหา Chrome ไม่เจอ)"""
+        return chrome_launch_command(cdp_url, self.system)
 
     def launch(self, cdp_url: str) -> str | None:
         """เปิด Chrome แล้วคืน path ของ Chrome ที่เปิด หรือ None ถ้าไม่พบ Chrome ในเครื่อง"""

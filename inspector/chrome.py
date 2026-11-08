@@ -25,6 +25,11 @@ PROFILE_NAME_WINDOWS = "TrafficInspectorProfile"  # อยู่ใน %LOCALAPP
 PROFILE_NAME_POSIX = ".traffic-inspector-profile"  # อยู่ใน $HOME
 
 
+def cdp_port(cdp_url: str) -> int:
+    """พอร์ตใน --cdp-url (ไม่ระบุ → 9222)"""
+    return urlsplit(cdp_url).port or DEFAULT_CDP_PORT
+
+
 def debug_flags(port: int, profile: str) -> list[str]:
     """flag ของ Chrome โหมด debug (SPEC 7) ใช้ร่วมกันทั้งคำสั่งที่แสดงบนจอ, --launch-chrome และสคริปต์ใน scripts/"""
     return [
@@ -40,7 +45,7 @@ def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
 
     Windows ใช้รูปแบบของ PowerShell ซึ่งเป็น terminal เริ่มต้นของ Windows 11
     """
-    port = urlsplit(cdp_url).port or DEFAULT_CDP_PORT
+    port = cdp_port(cdp_url)
     system = system or platform.system()
     if system == "Windows":
         executable = r'& "C:\Program Files\Google\Chrome\Application\chrome.exe"'
