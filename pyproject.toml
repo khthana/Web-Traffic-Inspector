@@ -3,6 +3,7 @@ testpaths = ["tests"]
 pythonpath = [".", "tests"]
 markers = ["chrome: ต้องมี Chrome จริงที่เปิดโหมด debug"]
 addopts = "-m 'not chrome'"
+timeout = 120  # pytest-timeout: test ที่ค้างจะ fail พร้อมชื่อและ stack แทนการค้างทั้งชุด
 
 [tool.mypy]
 python_version = "3.11"
