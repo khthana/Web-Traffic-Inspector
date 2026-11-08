@@ -970,8 +970,28 @@ class FlowStrip {
   }
 }
 
+const ACTION_WORDS = new Set(["add", "delete", "remove", "update", "create", "login", "logout", "register", "signin", "signup", "submit", "save", "checkout", "pay"]);
+const READ_WORDS = new Set(["get", "list", "fetch", "search", "data"]);
+const TOP_SCORE = 3;
+
+/** คำใน path (ไม่รวม query): แยกที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase เช่น /api/addToCart → api, add, to, cart */
+function pathWords(url) {
+  const path = safeUrl(url)?.pathname ?? url.split("?")[0];
+  return path.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+}
+
+/** ความน่าจะเป็น Exchange หลักของคลิก: 3 = เปลี่ยนข้อมูลและ path บอก action (cart/add)
+ *  2 = ไม่ใช่ GET แต่ path ไม่บอกอะไร, 1 = ไม่ใช่ GET แต่ path บอกว่าแค่อ่าน (เว็บที่ใช้ POST ทุก API), 0 = GET */
+function mainExchangeScore(exchange) {
+  if (exchange.request.method === "GET") return 0;
+  const words = pathWords(exchange.request.url);
+  if (words.some((word) => ACTION_WORDS.has(word))) return TOP_SCORE;
+  return words.some((word) => READ_WORDS.has(word)) ? 1 : 2;
+}
+
 /** "ตามคลิกล่าสุด": เมื่อมีคลิกใหม่ เลือก Exchange หลักของคลิกนั้นให้ ผู้สอนไม่ต้องสลับหน้าต่างมากด
- *  Exchange หลัก = ตัวแรกที่มองเห็นและไม่ใช่ GET (ส่วนใหญ่คือ action เช่นใส่ตะกร้า) ไม่มีก็ใช้ตัวแรกที่มองเห็น
+ *  Exchange หลัก = ตัวที่มองเห็นและได้ mainExchangeScore สูงสุด คะแนนเท่ากันเลือกตัวที่มาก่อน
+ *  Exchange ทยอยมาทีละตัว ตัวที่มาทีหลังแย่งการเลือกได้เมื่อคะแนนสูงกว่าเท่านั้น
  *  Hidden exchange (tracking, นอกโฟกัส) ไม่ถูกเลือกเลย แม้จะเปิดปุ่ม "ซ่อน N รายการ" อยู่ เพราะไม่ใช่สิ่งที่สอน
  *  สอนแนวคิด: single responsibility — รู้แค่ "ควรเลือกอะไร" ส่วนการเก็บแถวและวาด Detail เป็นงานของ TimelineView/DetailView */
 class ClickFollower {
@@ -995,13 +1015,14 @@ class ClickFollower {
     if (this.clickInteractionId !== null) this.choose();
   }
 
-  /** Exchange ทยอยมาทีละตัว: เลือกตัวแรกที่มองเห็นไว้ก่อน แล้วเปลี่ยนเป็นตัวที่ไม่ใช่ GET เมื่อมาถึง */
+  /** เลือกตัวที่คะแนนสูงสุดในตอนนี้ (reduce เก็บตัวแรกเมื่อเท่ากัน) ได้คะแนนสูงสุดที่เป็นไปได้แล้วก็เลิกตาม */
   choose() {
     const visible = this.timeline.visibleExchangesOf(this.clickInteractionId);
-    const main = visible.find((exchange) => exchange.request.method !== "GET");
-    const choice = main ?? visible[0];
-    if (choice && choice.id !== this.timeline.selectedId) this.timeline.select(choice.id);
-    if (main) this.stop(); // ได้ Exchange หลักแล้ว ตัวที่มาทีหลังไม่ต้องแย่ง
+    if (visible.length === 0) return;
+    const scored = visible.map((exchange) => ({ exchange, score: mainExchangeScore(exchange) }));
+    const best = scored.reduce((winner, candidate) => (candidate.score > winner.score ? candidate : winner));
+    if (best.exchange.id !== this.timeline.selectedId) this.timeline.select(best.exchange.id);
+    if (best.score === TOP_SCORE) this.stop(); // ตัวที่มาทีหลังคะแนนเท่ากันอย่างมาก แย่งไม่ได้อยู่แล้ว
   }
 
   /** ผู้สอนเลือกเองหรือปิด checkbox: เลิกตามคลิกนี้ */
