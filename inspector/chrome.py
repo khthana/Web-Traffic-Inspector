@@ -18,25 +18,40 @@ ContextHandler = Callable[[BrowserContext], Awaitable[None]]
 StatusHandler = Callable[[bool], None]
 
 
+DEFAULT_CDP_PORT = 9222
+DEBUG_ADDRESS = "127.0.0.1"  # เปิดพอร์ต CDP ให้เฉพาะเครื่องนี้ เครื่องอื่นในแลบสั่ง Chrome ของผู้สอนไม่ได้
+START_URL = "https://www.advice.co.th"
+PROFILE_NAME_WINDOWS = "TrafficInspectorProfile"  # อยู่ใน %LOCALAPPDATA%
+PROFILE_NAME_POSIX = ".traffic-inspector-profile"  # อยู่ใน $HOME
+
+
+def debug_flags(port: int, profile: str) -> list[str]:
+    """flag ของ Chrome โหมด debug (SPEC 7) ใช้ร่วมกันทั้งคำสั่งที่แสดงบนจอ, --launch-chrome และสคริปต์ใน scripts/"""
+    return [
+        f"--remote-debugging-port={port}",
+        f"--remote-debugging-address={DEBUG_ADDRESS}",
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+    ]
+
+
 def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
-    """คำสั่งเปิด Chrome โหมด debug ตาม OS (ใช้โปรไฟล์แยก เพราะ Chrome 136+ บังคับ)
+    """คำสั่งเปิด Chrome โหมด debug ตาม OS ให้ผู้สอนคัดลอกไปวางใน terminal (ใช้โปรไฟล์แยก เพราะ Chrome 136+ บังคับ)
 
     Windows ใช้รูปแบบของ PowerShell ซึ่งเป็น terminal เริ่มต้นของ Windows 11
     """
-    port = urlsplit(cdp_url).port or 9222
-    flags = f"--remote-debugging-port={port} --remote-debugging-address=127.0.0.1 --no-first-run"
+    port = urlsplit(cdp_url).port or DEFAULT_CDP_PORT
     system = system or platform.system()
     if system == "Windows":
-        return (
-            r'& "C:\Program Files\Google\Chrome\Application\chrome.exe" '
-            rf'{flags} --user-data-dir="$env:LOCALAPPDATA\TrafficInspectorProfile" https://www.advice.co.th'
-        )
-    if system == "Darwin":
-        return (
-            '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" '
-            f'{flags} --user-data-dir="$HOME/.traffic-inspector-profile" https://www.advice.co.th &'
-        )
-    return f'google-chrome {flags} --user-data-dir="$HOME/.traffic-inspector-profile" https://www.advice.co.th &'
+        executable = r'& "C:\Program Files\Google\Chrome\Application\chrome.exe"'
+        profile, background = rf'"$env:LOCALAPPDATA\{PROFILE_NAME_WINDOWS}"', ""
+    elif system == "Darwin":
+        executable = '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"'
+        profile, background = f'"$HOME/{PROFILE_NAME_POSIX}"', " &"
+    else:
+        executable = "google-chrome"
+        profile, background = f'"$HOME/{PROFILE_NAME_POSIX}"', " &"
+    return " ".join([executable, *debug_flags(port, profile), START_URL]) + background
 
 
 class ChromeConnector:

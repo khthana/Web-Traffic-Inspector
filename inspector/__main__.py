@@ -6,8 +6,11 @@ bind เฉพาะ 127.0.0.1 เสมอ (ไม่เปิดให้เ�
 
 import argparse
 import asyncio
+import os
+import platform
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import uvicorn
 
@@ -15,6 +18,7 @@ from inspector.app import create_app
 from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
 from inspector.chrome import ChromeConnector, chrome_launch_command
+from inspector.chrome_launcher import ChromeLauncher
 from inspector.correlator import Correlator
 from inspector.demo import feed_demo_events
 from inspector.filters import PRESETS_DIR, FilterSettings, load_presets
@@ -26,9 +30,10 @@ from inspector.store import EventStore
 from inspector.summarizer import Summarizer
 
 HOST = "127.0.0.1"
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m inspector", description="Web Traffic Inspector")
     parser.add_argument("--port", type=int, default=8000, help="พอร์ตของหน้า Inspector (ค่าเริ่มต้น 8000)")
     parser.add_argument("--max-exchanges", type=int, default=500, help="จำนวน Exchange สูงสุดที่เก็บในหน่วยความจำ")
@@ -46,7 +51,25 @@ def parse_args() -> argparse.Namespace:
         "--replay-file", type=Path, metavar="PATH",
         help="Recording playback: เปิดไฟล์ที่ export ไว้ดูโดยไม่ต่อ Chrome และไม่ส่ง request ใดๆ ออกไป",
     )
-    return parser.parse_args()
+    source.add_argument(
+        "--launch-chrome", action="store_true",
+        help="หา Chrome ในเครื่องแล้วเปิดโหมด debug ให้ (โปรไฟล์แยก, พอร์ต CDP เปิดเฉพาะ 127.0.0.1)",
+    )
+    return parser
+
+
+def launch_chrome_for(cdp_url: str, launcher: ChromeLauncher) -> None:
+    """เปิด Chrome โหมด debug ให้ตรงกับ --cdp-url; ถ้าหาไม่เจอ บอกคำสั่งให้เปิดเอง"""
+    if urlsplit(cdp_url).hostname not in LOCAL_HOSTS:
+        raise SystemExit(
+            f"--launch-chrome เปิด Chrome ได้เฉพาะเครื่องนี้ (127.0.0.1) แต่ --cdp-url ชี้ไปที่ {cdp_url}"
+        )
+    executable = launcher.launch(cdp_url)
+    if executable is None:
+        print("ไม่พบ Chrome ในเครื่อง: ติดตั้ง Google Chrome หรือเปิดเองด้วยคำสั่งนี้")
+        print("  " + chrome_launch_command(cdp_url, launcher.system))
+    else:
+        print(f"เปิด Chrome โหมด debug แล้ว ({executable})")
 
 
 async def run(args: argparse.Namespace, filters: FilterSettings, recording: Recording | None) -> None:
@@ -92,7 +115,9 @@ async def run(args: argparse.Namespace, filters: FilterSettings, recording: Reco
 
 
 def main() -> None:
-    args = parse_args()
+    args = build_parser().parse_args()
+    if args.launch_chrome:
+        launch_chrome_for(args.cdp_url, ChromeLauncher(platform.system(), os.environ, Path.home()))
     try:
         filters = FilterSettings(load_presets(PRESETS_DIR), selected=args.preset)
         recording = read_recording(args.replay_file) if args.replay_file else None
