@@ -26,13 +26,17 @@ def body_kind(headers: dict[str, str], body: str | None) -> BodyKind:
         return "json"
     if "x-www-form-urlencoded" in content_type:
         return "form"
-    if content_type.startswith("multipart/"):
+    if is_multipart(content_type):
         return "multipart"
     if content_type.startswith("text/") or "xml" in content_type or "javascript" in content_type:
         return "text"
     if not content_type:
         return "text"
     return "binary"
+
+
+def is_multipart(content_type: str) -> bool:
+    return content_type.strip().lower().startswith("multipart/")
 
 
 def describe_size(size: int) -> str:

@@ -8,7 +8,7 @@ import re
 from typing import Any, NamedTuple
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
-from inspector.http_parts import describe_size, header
+from inspector.http_parts import body_kind, describe_size, header
 from inspector.models import BodyKind, HttpExchange, Interaction
 from inspector.multipart import FormPart, parse_multipart
 
@@ -19,12 +19,17 @@ SENSITIVE_HEADER_PART = re.compile(r"token|session|auth|csrf|key|secret", re.I)
 URL_HEADER_NAMES = frozenset({"referer", "location", "content-location"})
 
 
-FILE_SUMMARY = "[ไฟล์: "
+FILE_SUMMARY = re.compile(r"\[ไฟล์: [^\r\n]*, [^\r\n]*, \d+(?:\.\d)? (?:B|KB)\]")  # ทั้งเนื้อ part ต้องเป็นแบบนี้
 
 
 def to_valid_text(text: str) -> str:
     """แทน byte ที่ไม่ใช่ UTF-8 (เก็บมาเป็น surrogate) ด้วย � ข้อความจึงส่งเป็น JSON ได้เสมอ"""
     return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> BodyKind:
+    """ชนิดของ body ใน Recording: รุ่นก่อนเก็บฟอร์ม multipart เป็น binary จึงดูจาก content-type ใหม่"""
+    return "multipart" if body_kind(headers, body) == "multipart" else kind
 
 
 def is_sensitive_key(key: str) -> bool:
@@ -89,7 +94,7 @@ class Redactor:
         """ซ่อนค่าใน query ที่แยกเป็น dict แล้ว"""
         return {key: [REDACTED] * len(values) if self.is_sensitive_key(key) else values for key, values in query.items()}
 
-    def body(self, body: str | None, kind: BodyKind, content_type: str = "") -> RedactedBody:
+    def body(self, body: str | None, kind: BodyKind, content_type: str) -> RedactedBody:
         """ซ่อนค่าใน body ตามชนิดของมัน (multipart ต้องรู้ boundary จาก content-type)"""
         if body is None or kind == "none":
             return RedactedBody(body, unscanned=False)
@@ -105,14 +110,19 @@ class Redactor:
     def exchange(self, exchange: HttpExchange) -> HttpExchange:
         """ซ่อนค่าลับใน Exchange ทั้งตัว (ใช้กับ Exchange จากไฟล์ Recording) ค่าที่ซ่อนไว้แล้วคงเดิม"""
         request = exchange.request
-        request_body = self.body(request.body, request.body_kind, header(request.headers, "content-type"))
+        request_kind = recorded_kind(request.body_kind, request.headers, request.body)
+        request_body = self.body(request.body, request_kind, header(request.headers, "content-type"))
+        redacted = request_body.redacted
         response = exchange.response
         if response is not None:
-            response_body = self.body(response.body, response.body_kind, header(response.headers, "content-type"))
+            response_kind = recorded_kind(response.body_kind, response.headers, response.body)
+            response_body = self.body(response.body, response_kind, header(response.headers, "content-type"))
+            redacted = redacted or response_body.redacted
             response = response.model_copy(
                 update={
                     "headers": self.headers(response.headers),
                     "body": response_body.text,
+                    "body_kind": response_kind,
                     "body_unscanned": response_body.unscanned,
                 }
             )
@@ -125,10 +135,12 @@ class Redactor:
                         "query": self.query(request.query),
                         "headers": self.headers(request.headers),
                         "body": request_body.text,
+                        "body_kind": request_kind,
                         "body_unscanned": request_body.unscanned,
                     }
                 ),
                 "response": response,
+                "has_redactions": exchange.has_redactions or redacted,
             }
         )
 
@@ -164,16 +176,21 @@ class Redactor:
             # parse ไม่ได้ (ผิดรูปหรือถูกตัดที่ 64 KB): บอกว่ายังไม่ได้ตรวจ และไม่ส่ง byte ที่ไม่ใช่ UTF-8 ต่อไป
             return RedactedBody(to_valid_text(body), unscanned=True)
         secret = any(self.is_sensitive_key(part.name) for part in form.parts)
-        return RedactedBody(form.map_content(self._form_part), unscanned=False, redacted=secret)
+        # to_valid_text กันพลาดอีกชั้น: ไม่มีทางที่ byte ที่ไม่ใช่ UTF-8 จะไปถึง JSON ของ REST/WebSocket
+        return RedactedBody(to_valid_text(form.map_content(self._form_part)), unscanned=False, redacted=secret)
 
     def _form_part(self, part: FormPart) -> str:
         """เนื้อของ part ที่แสดงได้: field ลับเป็น ••••, ไฟล์แนบเหลือแค่ชื่อ ชนิด และขนาด"""
         if self.is_sensitive_key(part.name):
             return REDACTED
-        if part.filename is None or part.content.startswith(FILE_SUMMARY):  # ย่อไว้แล้ว (เช่นมาจาก Recording)
+        if part.is_plain_text:
+            return part.content
+        if FILE_SUMMARY.fullmatch(part.content):  # ย่อไว้แล้ว (เช่นมาจาก Recording)
             return part.content
         size = len(part.content.encode("utf-8", "surrogateescape"))
-        return f"{FILE_SUMMARY}{part.filename}, {part.content_type}, {describe_size(size)}]"
+        filename = part.filename or "ไม่มีชื่อไฟล์"
+        content_type = (part.content_type or "ไม่ทราบชนิด").split(";")[0].strip()
+        return f"[ไฟล์: {filename}, {content_type}, {describe_size(size)}]"
 
     def _header_value(self, name: str, value: str) -> str:
         lowered = name.lower()

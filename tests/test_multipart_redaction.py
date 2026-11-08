@@ -3,10 +3,12 @@
 import json
 from dataclasses import replace
 
+import pytest
 from conftest import Harness
 
 from inspector.capture_events import RequestStarted, ResponseReceived
 from inspector.http_parts import body_kind
+from inspector.models import HttpExchange
 from inspector.redactor import Redactor
 
 BOUNDARY = "----WebKitFormBoundaryX7f3"
@@ -133,3 +135,73 @@ def test_recording_with_raw_multipart_is_redacted_on_load() -> None:
     assert redactor.body(SIGNUP, "multipart", CONTENT_TYPE).text == redactor.body(
         redactor.body(SIGNUP, "multipart", CONTENT_TYPE).text, "multipart", CONTENT_TYPE
     ).text  # ซ่อนซ้ำแล้วได้ผลเดิม (Recording ที่ซ่อนไว้แล้วไม่เปลี่ยน)
+
+
+RAW = "RAW-FILE-BYTES"
+
+
+def redact(body: str) -> str:
+    result = Redactor().body(body, "multipart", CONTENT_TYPE)
+    assert result.text is not None
+    return result.text
+
+
+@pytest.mark.parametrize(
+    "disposition",
+    [
+        'form-data; name="doc"; filename=a.txt',  # ไม่มีเครื่องหมายคำพูด
+        "form-data; name=\"doc\"; filename*=UTF-8''%E0%B8%81.txt",  # RFC 5987
+        'form-data; name="doc"; FILENAME="a.txt"',
+    ],
+)
+def test_every_way_of_naming_a_file_hides_its_contents(disposition: str) -> None:
+    text = redact(form((f"Content-Disposition: {disposition}", RAW)))
+    assert RAW not in text and "[ไฟล์: " in text
+
+
+@pytest.mark.parametrize("content_type", ["application/octet-stream", "multipart/mixed; boundary=inner", "image/png"])
+def test_parts_that_are_not_plain_text_are_summarized_even_without_a_filename(content_type: str) -> None:
+    text = redact(form((f'Content-Disposition: form-data; name="blob"\r\nContent-Type: {content_type}', RAW)))
+    assert RAW not in text and "[ไฟล์: " in text
+
+
+def test_text_field_with_undecodable_bytes_is_summarized_and_serializable(harness: Harness) -> None:
+    harness.feed(signup(form(field("note", "abc" + b"\xa1\xb2".decode("utf-8", "surrogateescape")))))
+    body = harness.get("/api/exchanges/ex_0001")["request"]["body"]
+    assert "[ไฟล์: " in body and "abc" not in body
+
+
+def test_escaped_quote_in_a_field_name_does_not_hide_a_secret() -> None:
+    assert "SECRET" not in redact(form(('Content-Disposition: form-data; name="x\\"_token"', "SECRET")))
+
+
+def test_text_outside_the_parts_is_not_passed_through_as_scanned() -> None:
+    for body in (
+        "password=SECRET\r\n" + form(field("a", "1")),  # preamble
+        form(field("a", "1")) + "password=SECRET\r\n",  # epilogue
+    ):
+        result = Redactor().body(body, "multipart", CONTENT_TYPE)
+        assert result.unscanned, body
+
+
+def test_content_that_only_looks_like_a_summary_is_still_summarized() -> None:
+    fake = "[ไฟล์: x.txt, text/plain, 1 B]" + RAW
+    assert RAW not in redact(form(upload("doc", "x.txt", "text/plain", fake)))
+
+
+def test_recording_made_before_multipart_support_is_redacted_on_load(harness: Harness) -> None:
+    # Recording รุ่นก่อนเก็บฟอร์ม multipart เป็น binary ที่ยังไม่ได้ซ่อนค่า
+    harness.feed(signup(form(field("q", "x"))))
+    stored = HttpExchange.model_validate(harness.get("/api/exchanges/ex_0001"))
+    old = stored.model_copy(
+        update={
+            "has_redactions": False,
+            "request": stored.request.model_copy(
+                update={"body": form(field("password", PASSWORD)), "body_kind": "binary", "body_unscanned": True}
+            ),
+        }
+    )
+    loaded = Redactor().exchange(old)
+    assert loaded.request.body_kind == "multipart" and loaded.request.body is not None
+    assert PASSWORD not in loaded.request.body and not loaded.request.body_unscanned
+    assert loaded.has_redactions

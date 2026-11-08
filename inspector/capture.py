@@ -21,7 +21,7 @@ from inspector.capture_events import (
 )
 from inspector.click_tracker import ClickTracker
 from inspector.clock import now_ms
-from inspector.http_parts import describe_size, header, origin_of
+from inspector.http_parts import describe_size, header, is_multipart, origin_of
 
 MAX_BODY_BYTES = 64 * 1024
 CAPTURED_TYPES = ("fetch", "xhr")
@@ -49,10 +49,6 @@ def charset_of(content_type: str) -> str:
         return codecs.lookup(charset).name
     except LookupError:
         return "utf-8"
-
-
-def is_multipart(content_type: str) -> bool:
-    return content_type.strip().lower().startswith("multipart/")
 
 
 def decode_multipart(raw: bytes) -> str:
