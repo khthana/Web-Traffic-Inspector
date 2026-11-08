@@ -83,7 +83,38 @@
       <ol class="card-list" id="timeline"></ol>
     </section>
     <button type="button" class="tool-button detail-back" id="detail-back">← กลับไป Timeline</button>
-    <section class="detail" id="detail" aria-label="Detail"></section>
+    <section class="detail" id="detail" aria-label="Detail">
+      <section class="flow-strip" id="flow-strip" aria-label="Flow strip: จังหวะของ HTTP" data-from-click="true" hidden>
+        <div class="flow-stage">
+          <div class="flow-node" data-node="user">ผู้ใช้</div>
+          <div class="flow-lane" data-step="click">
+            <span class="flow-label"></span>
+            <span class="flow-token flow-dot"></span>
+          </div>
+          <div class="flow-node" data-node="browser">เบราว์เซอร์<br>(JavaScript)</div>
+          <div class="flow-pair">
+            <div class="flow-lane" data-step="request">
+              <span class="flow-label"></span>
+              <span class="flow-token flow-envelope"><svg viewBox="0 0 24 16" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="14" rx="2" fill="currentColor"/><path d="M2 2l10 7 10-7" fill="none" stroke="var(--bg)" stroke-width="1.6"/></svg></span>
+            </div>
+            <div class="flow-lane flow-lane-back" data-step="response">
+              <span class="flow-token flow-envelope"><svg viewBox="0 0 24 16" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="14" rx="2" fill="currentColor"/><path d="M2 2l10 7 10-7" fill="none" stroke="var(--bg)" stroke-width="1.6"/></svg></span>
+              <span class="flow-label"></span>
+            </div>
+          </div>
+          <div class="flow-node" data-node="server">เซิร์ฟเวอร์<br><span class="flow-host"></span></div>
+        </div>
+        <div class="flow-controls">
+          <button type="button" class="tool-button" id="flow-again" title="เล่นแอนิเมชันอีกครั้ง (ไม่ได้ส่ง request ใหม่)">เล่นซ้ำ</button>
+          <div class="flow-speed" role="group" aria-label="ความเร็วแอนิเมชัน">
+            <button type="button" class="tool-button" data-speed="1">1x</button>
+            <button type="button" class="tool-button" data-speed="0.5">0.5x</button>
+            <button type="button" class="tool-button" data-speed="0.25">0.25x</button>
+          </div>
+        </div>
+      </section>
+      <div id="detail-body"></div>
+    </section>
   </main>
 
   <script src="/static/app.js"></script>

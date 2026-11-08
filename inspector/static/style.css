@@ -193,6 +193,76 @@ a.tool-button { text-decoration: none; }
   cursor: pointer;
 }
 
+/* Flow strip: ผู้ใช้ → เบราว์เซอร์ → เซิร์ฟเวอร์ (SPEC 6.5) เส้นและลูกศรอ่านทิศทางได้แม้ไม่มีแอนิเมชัน */
+.flow-strip {
+  min-height: 120px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+  padding: .5rem 0 .75rem;
+  margin-bottom: .75rem;
+  border-bottom: 1px solid var(--line);
+}
+.flow-strip[hidden] { display: none; }
+.flow-stage { flex: 1 1 480px; display: grid; grid-template-columns: auto minmax(3rem, 1fr) auto minmax(9rem, 2.5fr) auto; align-items: center; gap: .5rem; min-width: 0; }
+.flow-node {
+  padding: .4rem .7rem;
+  border: 2px solid var(--fg);
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+  font-size: .9em;
+  line-height: 1.3;
+}
+.flow-host { font-family: var(--mono); font-weight: 400; font-size: .85em; overflow-wrap: anywhere; }
+.flow-strip[data-from-click="false"] [data-node="user"],
+.flow-strip[data-from-click="false"] [data-step="click"] { opacity: .35; }
+.flow-pair { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.flow-lane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .3rem;
+  min-width: 0;
+}
+/* เส้นทางวิ่ง + หัวลูกศร (ขาออกชี้ขวา ขากลับชี้ซ้าย) */
+.flow-lane::after {
+  content: "";
+  align-self: stretch;
+  height: 0;
+  border-top: 2px solid var(--muted);
+}
+.flow-lane::before {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  right: -2px;
+  border: 6px solid transparent;
+  border-left: 9px solid var(--muted);
+}
+.flow-lane-back { flex-direction: column-reverse; }
+.flow-lane-back::before { top: -5px; bottom: auto; right: auto; left: -2px; border-left-color: transparent; border-right: 9px solid var(--muted); }
+.flow-label { font: 600 .9em var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.flow-label .badge { font-size: .95em; }
+[data-step="request"] .flow-label { display: flex; gap: .5em; }
+.flow-path { direction: rtl; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* จุด/ซองจดหมายที่วิ่ง: มองไม่เห็นจนกว่า FlowStrip จะเล่นแอนิเมชัน */
+.flow-token { position: absolute; left: 0; top: calc(100% - .45rem); opacity: 0; color: var(--get); pointer-events: none; }
+.flow-lane-back .flow-token { top: auto; bottom: calc(100% - .45rem); }
+.flow-dot { width: .8rem; height: .8rem; margin-top: .05rem; border-radius: 50%; background: var(--post); }
+.flow-envelope svg { display: block; width: 1.6rem; height: auto; }
+.flow-controls { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; margin-left: auto; }
+.flow-speed { display: flex; }
+.flow-speed .tool-button { border-radius: 0; font-size: .85em; padding: .2rem .5rem; }
+.flow-speed .tool-button:first-child { border-radius: 6px 0 0 6px; }
+.flow-speed .tool-button + .tool-button { border-left: none; }
+.flow-speed .tool-button:last-child { border-radius: 0 6px 6px 0; }
+@media (prefers-reduced-motion: reduce) {
+  .flow-token { display: none; }
+}
+
 .detail-back { display: none; align-self: flex-start; margin: 8px 16px 0; }
 
 .exchange-list { list-style: none; margin: 0; padding: 0; }

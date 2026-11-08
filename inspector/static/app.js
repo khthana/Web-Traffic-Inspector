@@ -835,6 +835,116 @@ class DetailView {
   }
 }
 
+/** ความยาวของแต่ละจังหวะใน Flow strip ที่ความเร็ว 1x (ms) รวมช่องว่างแล้วประมาณ 2 วินาที (SPEC 6.5) */
+const LRM = String.fromCharCode(0x200e); // left-to-right mark: กัน direction rtl ย้าย "/" ไปไว้ท้าย
+const FLOW_STEP_MS = { click: 500, request: 700, response: 700 };
+const FLOW_GAP_MS = 50;
+const FLOW_SPEEDS = [1, 0.5, 0.25];
+
+/** จุด/ซองวิ่งจากซ้ายไปขวา (หรือขวาไปซ้าย) จางเข้าตอนออกตัวและจางออกตอนถึง */
+function travel(fromLeft) {
+  const start = fromLeft ? { left: "0%", transform: "translateX(0)" } : { left: "100%", transform: "translateX(-100%)" };
+  const end = fromLeft ? { left: "100%", transform: "translateX(-100%)" } : { left: "0%", transform: "translateX(0)" };
+  return [{ ...start, opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.9 }, { ...end, opacity: 0 }];
+}
+
+/** Flow strip ด้านบนของ Detail: เล่นจังหวะ click → request → response ของ Exchange ที่เลือก
+ *  เล่นใหม่เมื่อเลือก Exchange อื่น หรือเมื่อคำตอบของ Exchange ที่รออยู่มาถึง (เล่นเฉพาะจังหวะ response)
+ *  ใช้ Web Animations API (element.animate) แทน CSS animation จึงต่อจังหวะ หยุด และเล่นซ้ำได้จากโค้ดตรงๆ
+ *  ผู้ใช้ตั้ง prefers-reduced-motion ไว้: ไม่มีอะไรวิ่ง แสดงป้ายทุกจังหวะนิ่งๆ แทน
+ *  สอนแนวคิด: encapsulation — คนอื่นเรียกแค่ show(exchange, interaction) ลำดับจังหวะและความเร็วเป็นเรื่องภายใน */
+class FlowStrip {
+  constructor(element, preferences, reducedMotion) {
+    this.element = element;
+    this.preferences = preferences;
+    this.reducedMotion = reducedMotion; // MediaQueryList: อ่าน .matches ทุกครั้งที่เล่น ผู้ใช้เปลี่ยนกลางทางก็ได้ผล
+    this.exchange = null;
+    this.animations = [];
+    const saved = Number(preferences.get("flowSpeed", 1));
+    this.speed = FLOW_SPEEDS.includes(saved) ? saved : 1;
+    this.lanes = Object.fromEntries(Object.keys(FLOW_STEP_MS).map((step) => {
+      const lane = element.querySelector(`[data-step="${step}"]`);
+      return [step, { label: lane.querySelector(".flow-label"), token: lane.querySelector(".flow-token") }];
+    }));
+    this.speedButtons = [...element.querySelectorAll("[data-speed]")];
+    for (const button of this.speedButtons) {
+      button.addEventListener("click", () => this.changeSpeed(Number(button.dataset.speed)));
+    }
+    element.querySelector("#flow-again").addEventListener("click", () => this.play(this.steps()));
+    this.showSpeed();
+  }
+
+  show(exchange, interaction) {
+    const previous = this.exchange;
+    this.exchange = exchange;
+    this.interaction = interaction;
+    this.element.hidden = !exchange;
+    if (!exchange) {
+      this.stop();
+      return;
+    }
+    this.fill();
+    if (previous?.id !== exchange.id) this.play(this.steps());
+    else if (previous.state === "pending" && exchange.state === "done") this.play(["response"]);
+  }
+
+  fromClick() {
+    return this.interaction?.kind === "click";
+  }
+
+  /** จังหวะที่เล่นได้: ไม่มีคลิกข้ามจังหวะแรก ยังไม่ได้คำตอบ (หรือล้มเหลว) ไม่มีซองวิ่งกลับ */
+  steps() {
+    return [
+      ...(this.fromClick() ? ["click"] : []),
+      "request",
+      ...(this.exchange.state === "done" ? ["response"] : []),
+    ];
+  }
+
+  fill() {
+    const { request } = this.exchange;
+    this.element.dataset.fromClick = String(this.fromClick());
+    this.lanes.click.label.textContent = this.fromClick() ? "click" : "ไม่มีคลิก";
+    // path ยาวตัดจากซ้ายแบบเดียวกับ Timeline (…/cart/add) ส่วนท้ายของ path บอกว่าเรียกอะไร
+    this.lanes.request.label.replaceChildren(`${request.method} `, textSpan("flow-path", `${LRM}${request.path}${LRM}`, request.url));
+    const duration = durationText(this.exchange);
+    this.lanes.response.label.replaceChildren(statusBadge(this.exchange), duration ? ` · ${duration}` : "");
+    this.element.querySelector(".flow-host").textContent = request.host;
+  }
+
+  play(steps) {
+    this.stop();
+    if (this.reducedMotion.matches) return;
+    let delay = 0;
+    for (const step of steps) {
+      const duration = FLOW_STEP_MS[step] / this.speed;
+      const { label, token } = this.lanes[step];
+      const timing = { duration, delay, fill: "both", easing: "ease-in-out" };
+      this.animations.push(token.animate(travel(step !== "response"), timing));
+      this.animations.push(label.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, duration: duration / 2 }));
+      delay += duration + FLOW_GAP_MS / this.speed;
+    }
+  }
+
+  stop() {
+    for (const animation of this.animations) animation.cancel();
+    this.animations = [];
+  }
+
+  changeSpeed(speed) {
+    this.speed = speed;
+    this.preferences.set("flowSpeed", speed);
+    this.showSpeed();
+    if (this.exchange) this.play(this.steps());
+  }
+
+  showSpeed() {
+    for (const button of this.speedButtons) {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.speed) === this.speed));
+    }
+  }
+}
+
 /** "ตามคลิกล่าสุด": เมื่อมีคลิกใหม่ เลือก Exchange หลักของคลิกนั้นให้ ผู้สอนไม่ต้องสลับหน้าต่างมากด
  *  Exchange หลัก = ตัวแรกที่มองเห็นและไม่ใช่ GET (ส่วนใหญ่คือ action เช่นใส่ตะกร้า) ไม่มีก็ใช้ตัวแรกที่มองเห็น
  *  Hidden exchange (tracking, นอกโฟกัส) ไม่ถูกเลือกเลย แม้จะเปิดปุ่ม "ซ่อน N รายการ" อยู่ เพราะไม่ใช่สิ่งที่สอน
@@ -1069,7 +1179,8 @@ function main() {
   new FontSizeControl(document.getElementById("font-smaller"), document.getElementById("font-bigger"), preferences);
   new ThemeSwitch(document.getElementById("theme-toggle"), preferences);
   new EthicsNotice(document.getElementById("ethics-banner"), document.getElementById("ethics-close"), preferences);
-  const detail = new DetailView(document.getElementById("detail"));
+  const detail = new DetailView(document.getElementById("detail-body"));
+  const flow = new FlowStrip(document.getElementById("flow-strip"), preferences, window.matchMedia("(prefers-reduced-motion: reduce)"));
   // callback นี้ถูกเรียกตอนผู้ใช้เลือกแถว ซึ่งเกิดหลังสร้าง follower (บรรทัดถัดไป) เสร็จแล้วเสมอ
   const timeline = new TimelineView(
     document.getElementById("timeline"),
@@ -1077,6 +1188,7 @@ function main() {
     (exchange, interaction, byUser) => {
       if (byUser) follower.stop(); // ผู้สอนเลือกเอง: โปรแกรมไม่แย่ง
       detail.show(exchange, interaction);
+      flow.show(exchange, interaction);
       if (exchange === null) stacked.back(); // ไม่มีอะไรให้ดูแล้ว (เช่นหลังล้าง)
       else if (byUser) stacked.openDetail(); // โปรแกรมเลือกให้ (ตามคลิก) ไม่แย่งหน้า Timeline บนจอแคบ
     },
