@@ -32,7 +32,7 @@ def click(text: str, ts: float) -> ClickCaptured:
 
 
 T1, T2, T3, T4, T5 = T0 + 10_000, T0 + 20_000, T0 + 30_000, T0 + 40_000, T0 + 50_000
-T6, T7 = T0 + 60_000, T0 + 70_000
+T6, T7, T8, T9, T10 = T0 + 60_000, T0 + 70_000, T0 + 80_000, T0 + 90_000, T0 + 100_000
 STEPS: dict[str, list[CaptureEvent]] = {
     "buy": [
         click("ใส่ตะกร้า", T1),
@@ -57,12 +57,22 @@ STEPS: dict[str, list[CaptureEvent]] = {
         request("a3", "POST", f"{API}/v1.0.0/cart/add", T6 + 30),
         request("a4", "POST", f"{API}/v1.0.0/cart/get", T6 + 40),
     ],
-    # คะแนนเท่ากัน: ตัวที่มาก่อนชนะ ตัวหลังไม่แย่ง
+    # คะแนนเท่ากัน: ตัวที่มาถึงก่อนชนะ ตัวหลังไม่แย่ง แม้เวลาเริ่มของตัวหลังจะเร็วกว่า
     "tie": [
         click("กดไลก์", T7),
-        request("e1", "POST", f"{API}/like", T7 + 10),
-        request("e2", "POST", f"{API}/follow", T7 + 20),
+        request("e1", "POST", f"{API}/like", T7 + 20),
+        request("e2", "POST", f"{API}/follow", T7 + 10),
     ],
+    # ระหว่างยังตามอยู่ (ยังไม่ได้คะแนนสูงสุด): ตัวที่คะแนนต่ำกว่าไม่แย่ง
+    "lower-later": [
+        click("โหวต", T8),
+        request("v1", "POST", f"{API}/vote", T8 + 10),
+        request("v2", "POST", f"{API}/stock/list", T8 + 20),
+    ],
+    "promo": [click("ดูโปร", T9), request("m1", "POST", f"{API}/promo", T9 + 10)],
+    "promo-add": [request("m2", "POST", f"{API}/coupon/add", T9 + 30)],
+    "draft": [click("ส่งฟอร์ม", T10), request("d1", "POST", f"{API}/draft", T10 + 10)],
+    "draft-submit": [request("d2", "POST", f"{API}/send/submit", T10 + 30)],
 }
 
 
@@ -152,27 +162,50 @@ def test_detail_follows_the_latest_click(inspector: str) -> None:
             await page.wait_for_selector('.exchange:has-text("/api/follow")')
             await selected_path(page, "/api/like")
 
-            # ปิด "ตามคลิกล่าสุด": คลิกใหม่ไม่เปลี่ยน Exchange ที่เลือก
+            await page.request.post(inspector + "/test/feed/lower-later")
+            await page.wait_for_selector('.exchange:has-text("/api/stock/list")')
+            await selected_path(page, "/api/vote")
+
+            # ผู้สอนเลือกเองระหว่างที่ยังตามอยู่: action ที่มาทีหลังไม่แย่ง
+            await page.request.post(inspector + "/test/feed/promo")
+            await selected_path(page, "/api/promo")
+            await page.locator(".exchange", has_text="/api/vote").click()
+            await page.request.post(inspector + "/test/feed/promo-add")
+            await page.wait_for_selector('.exchange:has-text("/api/coupon/add")')
+            await selected_path(page, "/api/vote")
+
+            # ปิด "ตามคลิกล่าสุด" ระหว่างที่ยังตามอยู่: action ที่มาทีหลังและคลิกใหม่ไม่เปลี่ยน Exchange ที่เลือก
+            await page.request.post(inspector + "/test/feed/draft")
+            await selected_path(page, "/api/draft")
             await page.uncheck("#follow-clicks")
+            await page.request.post(inspector + "/test/feed/draft-submit")
+            await page.wait_for_selector('.exchange:has-text("/api/send/submit")')
             await page.request.post(inspector + "/test/feed/wish")
             await page.wait_for_selector('.exchange:has-text("/api/wish")')
-            await selected_path(page, "/api/like")
+            await selected_path(page, "/api/draft")
             await browser.close()
 
     asyncio.run(scenario())
 
 
+SHOP = "https://shop.example"
 SCORES = [
-    ("POST", "/_advice-api/api/v1.0.0/cart/add", 3),
-    ("POST", "/api/addToCart", 3),  # camelCase แยกเป็นคำ
-    ("DELETE", "/api/items/42", 2),
-    ("POST", "/api/wish", 2),
-    ("POST", "/product/propair", 2),  # "pair" อยู่ในคำอื่น ไม่ใช่คำบอก action
-    ("POST", "/api/get-popup-home", 1),
-    ("POST", "/api/product/category/data", 1),
-    ("POST", "/api/search?q=add", 1),  # query ไม่นับ
-    ("GET", "/api/products", 0),
-    ("GET", "/logout", 0),  # GET อ่านอย่างเดียวตามมาตรฐาน ต่ำสุดเสมอ
+    ("POST", f"{SHOP}/_advice-api/api/v1.0.0/cart/add", 3),
+    ("POST", f"{SHOP}/api/addToCart", 3),  # camelCase แยกเป็นคำ
+    ("POST", f"{SHOP}/api/ADDToCart", 3),  # ตัวใหญ่ติดกันก่อน camelCase
+    ("PUT", f"{SHOP}/api/updates", 3),  # พหูพจน์
+    ("POST", f"{SHOP}/api/payment", 3),
+    ("POST", f"{SHOP}/api/addresses", 2),  # "addresses" ไม่ใช่ "add"
+    ("POST", "/api/cart/add#top", 3),  # URL ที่อ่านไม่ได้: ใช้ทั้งข้อความจนถึง ? หรือ #
+    ("POST", "/api/stats?do=add", 2),
+    ("DELETE", f"{SHOP}/api/items/42", 2),
+    ("POST", f"{SHOP}/api/wish", 2),
+    ("POST", f"{SHOP}/product/propair", 2),  # "pair" อยู่ในคำอื่น ไม่ใช่คำบอก action
+    ("POST", f"{SHOP}/api/get-popup-home", 1),
+    ("POST", f"{SHOP}/api/product/category/data", 1),
+    ("POST", f"{SHOP}/api/search?q=add", 1),  # query ไม่นับ
+    ("GET", f"{SHOP}/api/products", 0),
+    ("GET", f"{SHOP}/logout", 0),  # GET อ่านอย่างเดียวตามมาตรฐาน ต่ำสุดเสมอ
 ]
 
 
@@ -186,12 +219,10 @@ def test_main_exchange_score(inspector: str) -> None:
             browser = await playwright.chromium.launch(executable_path=executable, headless=True)
             page = await browser.new_page()
             await page.goto(inspector + "/")
-            for method, path, expected in SCORES:
-                score = await page.evaluate(
-                    "([method, path]) => mainExchangeScore({request: {method, url: 'https://shop.example' + path}})",
-                    [method, path],
-                )
-                assert score == expected, (method, path)
+            for method, url, expected in SCORES:
+                # app.js เป็น script ธรรมดา (ไม่ใช่ module) function ระดับบนสุดจึงเรียกจาก page ได้
+                score = await page.evaluate("([method, url]) => mainExchangeScore({request: {method, url}})", [method, url])
+                assert score == expected, (method, url)
             await browser.close()
 
     asyncio.run(scenario())

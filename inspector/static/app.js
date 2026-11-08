@@ -970,27 +970,43 @@ class FlowStrip {
   }
 }
 
-const ACTION_WORDS = new Set(["add", "delete", "remove", "update", "create", "login", "logout", "register", "signin", "signup", "submit", "save", "checkout", "pay"]);
-const READ_WORDS = new Set(["get", "list", "fetch", "search", "data"]);
-const TOP_SCORE = 3;
+// คะแนน Exchange หลักของคลิก (ใช้โดย mainExchangeScore และ ClickFollower)
+const MAIN_EXCHANGE_SCORE = Object.freeze({ ACTION: 3, CHANGE: 2, READ: 1, GET: 0 });
+const MAIN_EXCHANGE_ACTION_WORDS = new Set([
+  "add", "delete", "remove", "update", "create", "login", "logout", "register",
+  "signin", "signup", "submit", "save", "checkout", "pay", "payment",
+]);
+const MAIN_EXCHANGE_READ_WORDS = new Set(["get", "list", "fetch", "search", "data"]);
 
-/** คำใน path (ไม่รวม query): แยกที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase เช่น /api/addToCart → api, add, to, cart */
+/** คำใน path (ไม่รวม query และ #): แยกที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase
+ *  เช่น /api/addToCart → api, add, to, cart และ /api/ADDToCart → api, add, to, cart */
 function pathWords(url) {
-  const path = safeUrl(url)?.pathname ?? url.split("?")[0];
-  return path.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const path = safeUrl(url)?.pathname ?? url.split(/[?#]/)[0];
+  return path
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
 }
 
-/** ความน่าจะเป็น Exchange หลักของคลิก: 3 = เปลี่ยนข้อมูลและ path บอก action (cart/add)
- *  2 = ไม่ใช่ GET แต่ path ไม่บอกอะไร, 1 = ไม่ใช่ GET แต่ path บอกว่าแค่อ่าน (เว็บที่ใช้ POST ทุก API), 0 = GET */
+/** คำนี้หรือรูปพหูพจน์ (updates → update) อยู่ในชุดคำ */
+function hasWord(words, set) {
+  return words.some((word) => set.has(word) || (word.endsWith("s") && set.has(word.slice(0, -1))));
+}
+
+/** ความน่าจะเป็น Exchange หลักของคลิก: ACTION = ไม่ใช่ GET และ path บอก action (cart/add)
+ *  CHANGE = ไม่ใช่ GET แต่ path ไม่บอกอะไร, READ = ไม่ใช่ GET แต่ path บอกว่าแค่อ่าน (เว็บที่ใช้ POST ทุก API)
+ *  GET = อ่านอย่างเดียวตามมาตรฐาน HTTP ต่ำสุดเสมอแม้ path จะบอก action */
 function mainExchangeScore(exchange) {
-  if (exchange.request.method === "GET") return 0;
+  if (exchange.request.method === "GET") return MAIN_EXCHANGE_SCORE.GET;
   const words = pathWords(exchange.request.url);
-  if (words.some((word) => ACTION_WORDS.has(word))) return TOP_SCORE;
-  return words.some((word) => READ_WORDS.has(word)) ? 1 : 2;
+  if (hasWord(words, MAIN_EXCHANGE_ACTION_WORDS)) return MAIN_EXCHANGE_SCORE.ACTION;
+  return hasWord(words, MAIN_EXCHANGE_READ_WORDS) ? MAIN_EXCHANGE_SCORE.READ : MAIN_EXCHANGE_SCORE.CHANGE;
 }
 
 /** "ตามคลิกล่าสุด": เมื่อมีคลิกใหม่ เลือก Exchange หลักของคลิกนั้นให้ ผู้สอนไม่ต้องสลับหน้าต่างมากด
- *  Exchange หลัก = ตัวที่มองเห็นและได้ mainExchangeScore สูงสุด คะแนนเท่ากันเลือกตัวที่มาก่อน
+ *  Exchange หลัก = ตัวที่มองเห็นและได้ mainExchangeScore สูงสุด คะแนนเท่ากันเลือกตัวที่มาถึงก่อน
  *  Exchange ทยอยมาทีละตัว ตัวที่มาทีหลังแย่งการเลือกได้เมื่อคะแนนสูงกว่าเท่านั้น
  *  Hidden exchange (tracking, นอกโฟกัส) ไม่ถูกเลือกเลย แม้จะเปิดปุ่ม "ซ่อน N รายการ" อยู่ เพราะไม่ใช่สิ่งที่สอน
  *  สอนแนวคิด: single responsibility — รู้แค่ "ควรเลือกอะไร" ส่วนการเก็บแถวและวาด Detail เป็นงานของ TimelineView/DetailView */
@@ -1015,14 +1031,16 @@ class ClickFollower {
     if (this.clickInteractionId !== null) this.choose();
   }
 
-  /** เลือกตัวที่คะแนนสูงสุดในตอนนี้ (reduce เก็บตัวแรกเมื่อเท่ากัน) ได้คะแนนสูงสุดที่เป็นไปได้แล้วก็เลิกตาม */
+  /** เลือกตัวที่คะแนนสูงสุดในตอนนี้ ตัวที่เลือกไว้แล้วชนะเมื่อคะแนนเท่ากัน (มาถึงก่อน ไม่ว่าเวลาเริ่มจะเป็นเท่าไร)
+   *  ได้คะแนนสูงสุดที่เป็นไปได้แล้วก็เลิกตาม */
   choose() {
     const visible = this.timeline.visibleExchangesOf(this.clickInteractionId);
     if (visible.length === 0) return;
-    const scored = visible.map((exchange) => ({ exchange, score: mainExchangeScore(exchange) }));
-    const best = scored.reduce((winner, candidate) => (candidate.score > winner.score ? candidate : winner));
-    if (best.exchange.id !== this.timeline.selectedId) this.timeline.select(best.exchange.id);
-    if (best.score === TOP_SCORE) this.stop(); // ตัวที่มาทีหลังคะแนนเท่ากันอย่างมาก แย่งไม่ได้อยู่แล้ว
+    const current = visible.find((exchange) => exchange.id === this.timeline.selectedId);
+    const best = visible.reduce((winner, candidate) =>
+      mainExchangeScore(candidate) > mainExchangeScore(winner) ? candidate : winner, current ?? visible[0]);
+    if (best !== current) this.timeline.select(best.id);
+    if (mainExchangeScore(best) === MAIN_EXCHANGE_SCORE.ACTION) this.stop(); // ไม่มีตัวไหนคะแนนสูงกว่านี้ได้อีก
   }
 
   /** ผู้สอนเลือกเองหรือปิด checkbox: เลิกตามคลิกนี้ */
