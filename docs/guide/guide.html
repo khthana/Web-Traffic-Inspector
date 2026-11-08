@@ -193,7 +193,7 @@ python -m inspector --preset advice  <span class="c"># เริ่มด้ว�
   <h2 style="margin-top:24px">6. แถบเครื่องมือและปุ่มลัด</h2>
   <table>
     <tr><th style="width:26%">ปุ่ม</th><th>หน้าที่</th></tr>
-    <tr><td>สถานะ (จุดสี)</td><td>เขียว "เชื่อมต่อแล้ว · N แท็บ" / แดง "ไม่พบ Chrome" ถ้า Chrome หลุดจะมีแถบเหลืองแจ้ง และเชื่อมใหม่เอง ข้อมูลเดิมไม่หาย</td></tr>
+    <tr><td>สถานะ (จุดสี)</td><td>เขียว "เชื่อมต่อแล้ว · N แท็บ" / แดง "ไม่พบ Chrome" / น้ำเงิน "Open Recording: ไฟล์" หรือ "โหมดตัวอย่าง (--demo)" ถ้า Chrome หลุดจะมีแถบเหลืองแจ้ง และเชื่อมใหม่เอง ข้อมูลเดิมไม่หาย</td></tr>
     <tr><td>ช่องเลือก Preset</td><td>ทุกเว็บ / advice.co.th / กำหนดเอง… (ดูหัวข้อ 7)</td></tr>
     <tr><td>ตามคลิกล่าสุด</td><td>ให้ Detail เลือก Exchange หลักของคลิกล่าสุดอัตโนมัติ</td></tr>
     <tr><td>ซ่อน N รายการ</td><td>สลับแสดง/ไม่แสดง Exchange ที่ถูกซ่อน พร้อมเหตุผล</td></tr>
@@ -292,7 +292,7 @@ python -m inspector --preset advice  <span class="c"># เริ่มด้ว�
   <ul>
     <li>ดักเฉพาะ fetch/XHR (การเรียก API) ไม่แสดงรูปภาพ, CSS หรือไฟล์ JavaScript</li>
     <li>การอัปโหลดไฟล์ด้วย FormData: Chrome ไม่ส่ง body ให้ จึงแสดงข้อความแจ้งแทน body</li>
-    <li>เปลี่ยน Preset แล้ว การซ่อน/แสดงจะคำนวณใหม่ทันที แต่ "key ที่ต้องซ่อนค่าเพิ่ม" มีผลเฉพาะ Exchange ที่เกิดหลังจากนั้น ถ้าจะเพิ่ม key ให้ตั้งก่อนเริ่มคลิก หรือกด ล้าง แล้วทำใหม่</li>
+    <li>เปลี่ยน Preset แล้ว การซ่อน/แสดงคำนวณใหม่ทันที และ "key ที่ต้องซ่อนค่าเพิ่ม" ซ่อนค่าในข้อมูลที่เก็บไว้แล้วด้วย (ค่าที่ซ่อนแล้วดูย้อนไม่ได้)</li>
   </ul>
 </section>
 
@@ -335,7 +335,7 @@ python -m inspector --preset advice  <span class="c"># เริ่มด้ว�
     <tr><td>request ไปอยู่ผิดคลิก</td><td>เป็นข้อจำกัดของการจับคู่ด้วยเวลา (หัวข้อ 11) คลิกช้าลง หรือปรับ <code>--window-ms</code></td></tr>
     <tr><td>Chrome ปิดไประหว่างสอน</td><td>เปิด Chrome ใหม่ด้วยวิธีเดิม Inspector เชื่อมกลับเอง และข้อมูลเดิมยังอยู่</td></tr>
     <tr><td>พอร์ต 8000 ถูกใช้อยู่</td><td>รันด้วยพอร์ตอื่น เช่น <code>python -m inspector --port 8080</code></td></tr>
-    <tr><td>อยากลองหน้าจอโดยไม่ต่อเน็ต</td><td><code>python -m inspector --demo</code> (สถานะจะขึ้น "ไม่พบ Chrome" เพราะไม่ได้ต่อ Chrome จริง) หรือเปิด Recording ด้วย <code>--replay-file</code></td></tr>
+    <tr><td>อยากลองหน้าจอโดยไม่ต่อเน็ต</td><td><code>python -m inspector --demo</code> (สถานะขึ้น "โหมดตัวอย่าง (--demo)") หรือเปิด Recording ด้วย <code>--replay-file</code></td></tr>
   </table>
 
   <div style="break-inside: avoid"><h3>ปิดงานหลังสอน</h3>

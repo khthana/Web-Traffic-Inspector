@@ -1,6 +1,6 @@
 """สถานะการเชื่อม Chrome และ Watched tab ที่ UI เห็นผ่าน /ws และ /api/status"""
 
-from conftest import Harness
+from conftest import Harness, build_harness
 
 from inspector.capture_events import RequestStarted, TabChanged
 
@@ -64,3 +64,10 @@ def test_chrome_disconnect_keeps_data_and_fails_pending_exchanges(harness: Harne
     assert status["tabs"] == []
     assert exchange["state"] == "failed"
     assert exchange["failure"] == "Chrome หลุดก่อนได้คำตอบ"
+
+
+def test_demo_mode_says_so_instead_of_missing_chrome() -> None:
+    with build_harness(demo=True) as demo:
+        status = demo.get("/api/status")
+    assert status["mode"] == "demo"
+    assert status["chrome_launch_command"] == ""  # ไม่ต้องสอนวิธีเปิด Chrome

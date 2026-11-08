@@ -138,7 +138,10 @@ class InspectorPipeline:
             self._filters.edit_custom(update.rules)
         self._chain = self._filters.chain()
         self._redactor = self._redactor.with_extra_keys(self._filters.current.redact_keys)
-        self._store.refilter(self._chain.apply)
+        # key ที่ต้องซ่อนเพิ่มต้องมีผลกับของที่เก็บไว้แล้วด้วย (ซ่อนซ้ำได้: ค่าที่ซ่อนไว้แล้วคงเดิม)
+        self._store.refilter(lambda exchange: self._summarized(self._chain.apply(self._redactor.exchange(exchange))))
+        for interaction in self._store.interactions():
+            self._store.replace_interaction(self._redactor.interaction(interaction))
         self.status = self.status.model_copy(
             update={
                 "preset": self._filters.current.name,
@@ -176,6 +179,10 @@ class InspectorPipeline:
         self._store.refilter(self._chain.apply)
         self._publish_status(mode="playback", recording_file=file_name, hidden_count=self._store.hidden_count)
         return len(recording.exchanges) - len(self._store)
+
+    def start_demo(self) -> None:
+        """โหมด `--demo`: บอก UI ว่าเป็นข้อมูลตัวอย่าง ไม่ใช่ Chrome หาย (ไม่มีคำสั่งเปิด Chrome ให้สอน)"""
+        self._publish_status(mode="demo", chrome_launch_command="")
 
     def snapshot(self) -> dict[str, Any]:
         """ข้อมูลทั้งหมดที่ client ใหม่ต้องรู้"""

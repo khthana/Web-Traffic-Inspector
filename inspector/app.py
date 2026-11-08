@@ -66,19 +66,27 @@ def create_app(pipeline: InspectorPipeline, store: EventStore, broadcaster: Broa
             headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
         )
 
+    def refuse_while_playing() -> None:
+        """Recording playback ไม่มี traffic ใหม่ให้หยุด และล้างแล้วโหลดไฟล์กลับไม่ได้ (UI ซ่อนปุ่มอยู่แล้ว)"""
+        if pipeline.status.mode == "playback":
+            raise HTTPException(status_code=409, detail="กำลังเปิด Recording อยู่: หยุดหรือล้างไม่ได้")
+
     @app.post("/api/pause")
     def pause() -> InspectorStatus:
         """หยุดเก็บชั่วคราว (request และคลิกใหม่ถูกทิ้ง ไม่ได้บล็อกเว็บ)"""
+        refuse_while_playing()
         return pipeline.pause()
 
     @app.post("/api/resume")
     def resume() -> InspectorStatus:
         """เริ่มเก็บต่อ"""
+        refuse_while_playing()
         return pipeline.resume()
 
     @app.post("/api/clear")
     def clear() -> InspectorStatus:
         """ล้างประวัติทั้งหมดและ Hidden count"""
+        refuse_while_playing()
         return pipeline.clear()
 
     @app.get("/api/filters")

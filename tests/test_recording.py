@@ -221,3 +221,30 @@ def test_download_name_keeps_only_safe_characters() -> None:
     assert name.startswith("recording-it_0003X-")
     assert name.endswith(".json")
     assert all(c.isascii() and (c.isalnum() or c in "-_.") for c in name)
+
+
+def test_pause_and_clear_are_refused_while_playing_a_recording(tmp_path: Path) -> None:
+    recording = read_recording(exported(tmp_path))
+    with build_harness(recording=recording, recording_file="x.json") as playback:
+        before = history(playback)
+        for action in ("pause", "clear"):
+            response = playback.client.post(f"/api/{action}")
+            assert response.status_code == 409, response.text
+            assert "Recording" in response.json()["detail"]
+        assert history(playback) == before
+        assert playback.get("/api/status")["paused"] is False
+
+
+def test_recording_with_duplicate_ids_is_rejected(tmp_path: Path) -> None:
+    data = json.loads(exported(tmp_path).read_text(encoding="utf-8"))
+    data["exchanges"].append(data["exchanges"][0])
+    twice = tmp_path / "twice.json"
+    twice.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=f"twice.json.*{data['exchanges'][0]['id']}"):
+        read_recording(twice)
+
+    data = json.loads(exported(tmp_path).read_text(encoding="utf-8"))
+    data["interactions"].append(data["interactions"][0])
+    twice.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=data["interactions"][0]["id"]):
+        read_recording(twice)
