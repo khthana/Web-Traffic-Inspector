@@ -339,6 +339,7 @@ a.tool-button { text-decoration: none; }
 }
 
 .code-block { margin: 0 0 1rem; }
+.code-hint { display: inline; margin-left: .6rem; color: var(--muted); font-size: .85em; }
 .code-snippet {
   font: .9em/1.45 var(--mono);
   background: var(--surface);

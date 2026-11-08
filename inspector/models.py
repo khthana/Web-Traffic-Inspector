@@ -89,6 +89,7 @@ class CodeSnippet(BaseModel):
 
     language: CodeLanguage
     label: str  # ข้อความบนปุ่มคัดลอก เช่น "Copy as curl"
+    hint: str  # เอาโค้ดไปรันที่ไหน เช่น "รันใน bash, zsh หรือ Git Bash"
     code: str
 
 

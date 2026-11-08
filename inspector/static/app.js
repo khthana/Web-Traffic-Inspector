@@ -671,7 +671,7 @@ function codeBlock(snippet) {
   button.addEventListener("click", () => copyText(button, snippet.code));
   const code = el("pre", "code-snippet", snippet.code);
   code.dataset.language = snippet.language;
-  return el("section", "code-block", button, code);
+  return el("section", "code-block", button, el("p", "code-hint", snippet.hint), code);
 }
 
 

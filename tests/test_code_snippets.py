@@ -183,3 +183,43 @@ def assert_same_request(received: list[Received], note: str = "it's ไทย") 
     assert request.headers["x-note"] == "it's \"quoted\""
     assert "cookie" not in request.headers
     assert json.loads(request.body) == {"sku": "NB-01", "qty": 1, "password": "••••", "note": note}
+
+
+def started(harness: Harness, method: str, url: str, headers: dict[str, str] | None = None, body: str | None = None) -> str:
+    harness.feed(
+        RequestStarted(
+            request_key=f"{method}{url}", tab_id="tab-1", page_url="https://shop.example/", ts=1.0, method=method,
+            url=url, resource_type="fetch", headers=headers or {}, post_data=body,
+        )
+    )
+    return str(harness.get("/api/interactions")["exchanges"][-1]["id"])
+
+
+def test_unscanned_body_carries_the_same_warning_as_the_request_tab(harness: Harness) -> None:
+    exchange_id = started(harness, "POST", "https://shop.example/api/note", {"content-type": "text/plain"}, "hello")
+    for language, code in snippets(harness, exchange_id).items():
+        assert "ไม่ได้ตรวจหาข้อมูลลับ" in code, language
+
+
+def test_hidden_value_in_the_url_is_pointed_out_in_its_encoded_form(harness: Harness) -> None:
+    code = snippets(harness, add_to_cart(harness))["python"]
+    assert "%E2%80%A2%E2%80%A2%E2%80%A2%E2%80%A2" in code.splitlines()[1]  # comment บอกว่าใน URL หน้าตาเป็นแบบนี้
+
+
+def test_only_path_and_query_are_percent_encoded(harness: Harness) -> None:
+    code = snippets(harness, started(harness, "GET", "https://ร้าน.example/สินค้า?q=โน้ต"))["curl"]
+    assert code == "curl 'https://ร้าน.example/%E0%B8%AA%E0%B8%B4%E0%B8%99%E0%B8%84%E0%B9%89%E0%B8%B2?q=%E0%B9%82%E0%B8%99%E0%B9%89%E0%B8%95'"
+
+
+def test_curl_keeps_the_method_when_curl_would_guess_another(harness: Harness) -> None:
+    get_with_body = started(harness, "GET", "https://shop.example/api/search", {"content-type": "application/json"}, "{}")
+    head = started(harness, "HEAD", "https://shop.example/api/items")
+    assert snippets(harness, get_with_body)["curl"].startswith("curl -X GET ")  # มี body แล้ว curl จะเดาเป็น POST
+    assert snippets(harness, head)["curl"] == "curl --head 'https://shop.example/api/items'"  # -X HEAD ทำ curl ค้างรอ body
+
+
+def test_each_snippet_says_where_it_runs(harness: Harness) -> None:
+    samples = {s["language"]: s["hint"] for s in harness.get(f"/api/exchanges/{add_to_cart(harness)}/code")}
+    assert "Git Bash" in samples["curl"] and "PowerShell" in samples["curl"]
+    assert "pip install requests" in samples["python"]
+    assert "CORS" in samples["fetch"]

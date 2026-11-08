@@ -63,6 +63,7 @@ def test_code_tab_copies_runnable_fetch_without_hidden_values(inspector: str) ->
             "Copy as curl", "Copy as Python requests", "Copy as JavaScript fetch",
         ]
         assert SECRET not in await page.inner_text(".tab-panel")
+        assert "Git Bash" in await page.inner_text('.code-block:has(.code-snippet[data-language="curl"]) .code-hint')
 
         await page.click('.copy-code:has-text("Copy as JavaScript fetch")')
         await page.wait_for_selector('.copy-code:has-text("คัดลอกแล้ว")')
