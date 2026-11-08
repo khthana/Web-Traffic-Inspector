@@ -22,12 +22,16 @@ from inspector.capture_events import (
 from inspector.click_tracker import ClickTracker
 from inspector.clock import now_ms
 from inspector.http_parts import describe_size, header, is_multipart, origin_of
+from inspector.post_data import PostDataReader
 
 MAX_BODY_BYTES = 64 * 1024
 CAPTURED_TYPES = ("fetch", "xhr")
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 IGNORED_SCHEMES = ("about:", "chrome:", "chrome-extension:", "devtools:", "chrome-untrusted:", "edge:")
 TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql", "multipart/")
+BODYLESS_METHODS = ("GET", "HEAD", "OPTIONS")
+MISSING_FORM_BODY = "อ่าน body ของฟอร์มที่แนบไฟล์จาก Chrome ไม่ได้ (multipart/form-data)"
+MAX_LEFT_OUT_BODY_BYTES = 1024 * 1024  # Chrome ส่ง body ก้อนใหญ่ผ่าน CDP ช้ามาก (11 MB ราว 25 วินาที) จึงไม่ขอ
 
 
 def is_inspector_url(url: str, inspector_origins: tuple[str, ...]) -> bool:
@@ -92,6 +96,7 @@ class TrafficCapture:
 
     สอนแนวคิด: dependency injection — class นี้ไม่รู้ว่าใครรับ event ต่อ รู้แค่ว่าต้องเรียก `sink`
     และ composition — มี ClickTracker อยู่ข้างในเพื่อดักคลิกของแท็บเดียวกัน
+    กับ PostDataReader หนึ่งตัวต่อแท็บ ไว้ขอ body ที่ Chrome ไม่ได้แนบมากับ request
     """
 
     def __init__(self, sink: EventSink, inspector_origins: tuple[str, ...]) -> None:
@@ -99,16 +104,18 @@ class TrafficCapture:
         self._origins = inspector_origins
         self._tab_ids: dict[Page, str] = {}
         self._started: dict[Request, asyncio.Task[str]] = {}
+        self._readers: dict[Page, asyncio.Task[PostDataReader | None]] = {}
         self._next_tab = 0
         self._next_request = 0
         self._clicks = ClickTracker(sink, inspector_origins, tab_of=self.watched_tab_id, clock=now_ms)
 
     async def attach(self, context: BrowserContext) -> None:
         """เริ่มฟัง context นี้ รวมถึงแท็บที่จะเปิดใหม่ภายหลัง"""
-        for task in self._started.values():  # งานค้างจากการเชื่อมรอบก่อน: ทิ้งไป
+        for task in [*self._started.values(), *self._readers.values()]:  # งานค้างจากการเชื่อมรอบก่อน: ทิ้งไป
             task.cancel()
         self._tab_ids.clear()
         self._started.clear()
+        self._readers.clear()
         context.on("page", self._track_page)
         context.on("request", self._on_request)
         context.on("requestfinished", self._on_finished)
@@ -129,6 +136,7 @@ class TrafficCapture:
             return
         self._next_tab += 1
         self._tab_ids[page] = f"tab-{self._next_tab}"
+        self._readers[page] = asyncio.ensure_future(self._open_reader(page))
         self._announce_tab(page)
         page.on("framenavigated", lambda frame: self._on_navigated(page) if frame == page.main_frame else None)
         page.on("close", lambda _: self._on_closed(page))
@@ -142,7 +150,20 @@ class TrafficCapture:
         if page in self._tab_ids:
             self._announce_tab(page)
 
+    @staticmethod
+    async def _open_reader(page: Page) -> PostDataReader | None:
+        """CDP session ของแท็บนี้สำหรับขอ body (เปิดไม่ได้ เช่นแท็บปิดไปแล้ว → ไม่มี)"""
+        try:
+            reader = PostDataReader(await page.context.new_cdp_session(page))
+            await reader.start()
+        except PlaywrightError:
+            return None
+        return reader
+
     def _on_closed(self, page: Page) -> None:
+        reader = self._readers.pop(page, None)
+        if reader is not None:
+            reader.cancel()
         tab_id = self._tab_ids.pop(page, None)
         if tab_id is not None:
             self._sink(TabChanged(tab_id=tab_id, url=page.url, ts=now_ms(), open=False))
@@ -160,7 +181,7 @@ class TrafficCapture:
     async def _start(self, request: Request, page: Page, page_url: str, ts: float) -> str:
         """ส่ง RequestStarted แล้วคืน request_key"""
         headers = await all_headers(request)
-        post_data, body_error = self._post_data(request, header(headers, "content-type"))
+        post_data, body_error = await self._post_data(request, page, headers)
         self._next_request += 1
         key = f"req-{self._next_request}"
         self._sink(
@@ -241,15 +262,47 @@ class TrafficCapture:
         except PlaywrightError:  # request จาก service worker ไม่มี frame
             return None
 
-    @staticmethod
-    def _post_data(request: Request, content_type: str) -> tuple[str | None, str | None]:
+    async def _post_data(self, request: Request, page: Page, headers: dict[str, str]) -> tuple[str | None, str | None]:
         """(body, เหตุผลที่ไม่มี body)"""
+        content_type = header(headers, "content-type")
         try:
-            if is_multipart(content_type):
-                raw = request.post_data_buffer
-                if raw is None:  # Chrome ไม่ส่ง body ที่มีไฟล์ (Blob) มาทาง CDP
-                    return None, "Chrome ไม่ส่ง body ของฟอร์มที่แนบไฟล์มาให้ (multipart/form-data)"
-                return decode_multipart(raw), None
-            return request.post_data, None
-        except (PlaywrightError, UnicodeDecodeError):  # body เป็น binary ที่ decode เป็นข้อความไม่ได้
+            raw = request.post_data_buffer
+        except PlaywrightError:
+            raw = None
+        too_large = self._too_large(headers)
+        if raw is None and content_type and request.method not in BODYLESS_METHODS and too_large is None:
+            raw = await self._left_out_body(request, page, is_multipart(content_type))  # เช่น FormData ที่มี Blob/File
+        if raw is not None and len(raw) > MAX_LEFT_OUT_BODY_BYTES:
+            too_large = describe_size(len(raw))
+            raw = None
+        if raw is None:
+            if too_large is not None:
+                return None, f"body ใหญ่เกินจะแสดง ({too_large})"
+            return None, MISSING_FORM_BODY if is_multipart(content_type) else None
+        if is_multipart(content_type):
+            return decode_multipart(raw), None
+        try:
+            return raw.decode("utf-8"), None
+        except UnicodeDecodeError:  # body เป็น binary ที่ decode เป็นข้อความไม่ได้
             return None, None
+
+    async def _left_out_body(self, request: Request, page: Page, is_form: bool) -> bytes | None:
+        """ขอ body ที่ Chrome ไม่ได้แนบมากับ request จาก PostDataReader ของแท็บนั้น"""
+        task = self._readers.get(page)
+        if task is None:
+            return None
+        await asyncio.wait({task})  # ไม่ใช้ await task: ถ้า task ถูกยกเลิก ต้องไม่ยกเลิกตัวเราไปด้วย
+        reader = None if task.cancelled() else task.result()
+        if reader is None:
+            return None
+        # รอ event ของ CDP เฉพาะฟอร์มที่มีไฟล์ ที่เหลือ (เช่น POST ไม่มี body) อ่านเฉพาะที่ Chrome บอกไว้แล้ว
+        return await reader.read(request.method, request.url, wait=is_form)
+
+    @staticmethod
+    def _too_large(headers: dict[str, str]) -> str | None:
+        """ขนาดที่บอกใน Content-Length ถ้าใหญ่เกินจะขอ body มา"""
+        try:
+            length = int(header(headers, "content-length") or 0)
+        except ValueError:
+            return None
+        return describe_size(length) if length > MAX_LEFT_OUT_BODY_BYTES else None
