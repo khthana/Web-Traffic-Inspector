@@ -31,7 +31,10 @@ def to_valid_text(text: str) -> str:
     return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
 
 
-NOT_JSON = object()  # parse_json คืนค่านี้เมื่อ parse ไม่ได้ (None แยกไม่ออกจาก JSON `null`)
+# parse_json คืนค่าเหล่านี้เมื่อ parse ไม่ได้ (None แยกไม่ออกจาก JSON `null`)
+NOT_JSON = object()  # ไม่ใช่ JSON
+TOO_DEEP_JSON = object()  # อาจเป็น JSON แต่ซ้อนลึกเกินกว่าที่ Python parse ได้: ห้ามนับว่าเป็นข้อความธรรมดา
+BOM = chr(0xFEFF)  # byte order mark ที่บางเครื่องมือใส่ไว้หน้า JSON
 
 
 # JSON แบบคู่ชื่อ/ค่า: `{"name": "_fbp", "value": ...}` ชื่อ field อยู่ในค่าของ key บอกชื่อ
@@ -41,16 +44,18 @@ MAX_NESTED_JSON = 5  # JSON ที่ซ้อนเป็น string ได้�
 
 
 def parse_json(text: str) -> Any:
+    """parse JSON (ข้าม BOM ข้างหน้า) parse ไม่ได้คืน NOT_JSON หรือ TOO_DEEP_JSON"""
     try:
-        return json.loads(text)
-    except (ValueError, RecursionError):  # ลึกเกินกว่าที่ Python parse ได้ก็นับว่า parse ไม่ได้
+        return json.loads(text.removeprefix(BOM))
+    except ValueError:
         return NOT_JSON
+    except RecursionError:
+        return TOO_DEEP_JSON
 
 
 def looks_like_json_container(text: str) -> bool:
     """string ที่น่าจะเป็น JSON object หรือ array (กรองก่อนลอง parse ทุก string)"""
-    stripped = text.strip()
-    return stripped[:1] in ("{", "[")
+    return text.removeprefix(BOM).strip()[:1] in ("{", "[")
 
 
 class ScannedJson(NamedTuple):
@@ -62,6 +67,25 @@ class ScannedJson(NamedTuple):
     value: Any
     redacted: bool  # มีค่าถูกซ่อน (ต้องเขียน JSON ใหม่)
     unscanned: bool  # มีส่วนที่ซ้อนลึกเกิน MAX_NESTED_JSON จึงไม่ได้ตรวจ
+
+    @staticmethod
+    def kept(value: Any, unscanned: bool = False) -> "ScannedJson":
+        """ค่าเดิมที่ไม่มีอะไรถูกซ่อน"""
+        return ScannedJson(value, redacted=False, unscanned=unscanned)
+
+    @staticmethod
+    def combine(value: Any, parts: "list[ScannedJson]", redacted: bool = False) -> "ScannedJson":
+        """รวมผลของค่าชั้นในเป็นผลของค่าชั้นนอก"""
+        return ScannedJson(
+            value,
+            redacted=redacted or any(part.redacted for part in parts),
+            unscanned=any(part.unscanned for part in parts),
+        )
+
+    def as_text(self, original: str) -> str:
+        """ไม่มีอะไรถูกซ่อน: คืนข้อความเดิม (รูปแบบเดิม) ไม่งั้นเขียน JSON ใหม่จากค่าที่ซ่อนแล้ว
+        เขียนใหม่จากค่าที่ parse แล้วเสมอ key ซ้ำในต้นฉบับจึงลักลอบส่งค่าจริงออกไปไม่ได้"""
+        return json.dumps(self.value, ensure_ascii=False) if self.redacted else original
 
 
 def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> BodyKind:
@@ -206,7 +230,7 @@ class Redactor:
 
     def _json_body(self, body: str) -> RedactedBody:
         data = parse_json(body)
-        if data is NOT_JSON:
+        if data is NOT_JSON or data is TOO_DEEP_JSON:
             return RedactedBody(body, unscanned=True)  # parse ไม่ได้: ส่งผ่านไป แต่บอกว่ายังไม่ได้ตรวจ
         return self._redact_parsed_json(body, data)
 
@@ -221,14 +245,10 @@ class Redactor:
     def _redact_parsed_json(self, body: str, data: Any) -> RedactedBody:
         """รับทั้งข้อความเดิมและค่าที่ parse แล้ว: ไม่มีอะไรต้องซ่อนก็คืนข้อความเดิม (รูปแบบเดิม) ไม่งั้นเขียนใหม่"""
         try:
-            scanned = self._scan_json(data, nested=0)
+            scanned = self._scan_json(data, depth=0)
         except RecursionError:
             return RedactedBody(body, unscanned=True)  # ลึกเกินกว่าจะเดินตรวจได้
-        if not scanned.redacted:
-            return RedactedBody(body, unscanned=scanned.unscanned)  # ไม่มีอะไรต้องซ่อน: คงรูปแบบเดิมไว้
-        # เขียนใหม่จากค่าที่ parse แล้วเสมอ key ซ้ำในต้นฉบับจึงลักลอบส่งค่าจริงออกไปไม่ได้
-        text = json.dumps(scanned.value, ensure_ascii=False)
-        return RedactedBody(text, unscanned=scanned.unscanned, redacted=True)
+        return RedactedBody(scanned.as_text(body), unscanned=scanned.unscanned, redacted=scanned.redacted)
 
     def _multipart_body(self, body: str, content_type: str) -> RedactedBody:
         form = parse_multipart(body, content_type)
@@ -291,46 +311,42 @@ class Redactor:
             pieces.append(piece)
         return "&".join(pieces)
 
-    def _scan_json(self, value: Any, nested: int) -> ScannedJson:
-        """เดินตรวจค่า JSON ทุกชั้น: key ลับ, คู่ชื่อ/ค่า และ string ที่เป็น JSON ซ้อนอยู่ (`nested` = ซ้อนมาแล้วกี่ชั้น)"""
+    def _scan_json(self, value: Any, depth: int) -> ScannedJson:
+        """เดินตรวจค่า JSON ทุกชั้น: key ลับ, คู่ชื่อ/ค่า และ string ที่เป็น JSON ซ้อนอยู่ (`depth` = ซ้อนเป็น string มาแล้วกี่ชั้น)"""
         if isinstance(value, dict):
-            return self._scan_object(value, nested)
+            return self._scan_object(value, depth)
         if isinstance(value, list):
-            items = [self._scan_json(item, nested) for item in value]
-            return ScannedJson(
-                [item.value for item in items],
-                any(item.redacted for item in items),
-                any(item.unscanned for item in items),
-            )
+            items = [self._scan_json(item, depth) for item in value]
+            return ScannedJson.combine([item.value for item in items], items)
         if isinstance(value, str) and looks_like_json_container(value):
-            return self._scan_nested_json(value, nested)
-        return ScannedJson(value, redacted=False, unscanned=False)
+            return self._scan_nested_json(value, depth)
+        return ScannedJson.kept(value)
 
-    def _scan_object(self, value: dict[str, Any], nested: int) -> ScannedJson:
+    def _scan_object(self, value: dict[str, Any], depth: int) -> ScannedJson:
+        """object: ค่าของ key ลับถูกซ่อน และถ้า key บอกชื่อ (name, key, field, id) มีค่าเป็นชื่อที่อ่อนไหว
+        ค่าของ key บอกค่า (value, val, values, content) ใน object เดียวกันก็ถูกซ่อนด้วย"""
         paired_secret = any(
             key.lower() in PAIR_NAME_KEYS and isinstance(name, str) and self.is_sensitive_key(name)
             for key, name in value.items()
         )
         result: dict[str, Any] = {}
-        redacted = unscanned = False
+        parts: list[ScannedJson] = []
+        hidden = False
         for key, item in value.items():
             if self.is_sensitive_key(key) or (paired_secret and key.lower() in PAIR_VALUE_KEYS):
-                result[key], redacted = REDACTED, True
+                result[key], hidden = REDACTED, True
                 continue
-            scanned = self._scan_json(item, nested)
+            scanned = self._scan_json(item, depth)
             result[key] = scanned.value
-            redacted = redacted or scanned.redacted
-            unscanned = unscanned or scanned.unscanned
-        return ScannedJson(result, redacted, unscanned)
+            parts.append(scanned)
+        return ScannedJson.combine(result, parts, redacted=hidden)
 
-    def _scan_nested_json(self, text: str, nested: int) -> ScannedJson:
+    def _scan_nested_json(self, text: str, depth: int) -> ScannedJson:
         """string ที่เป็น JSON อีกชั้น: ตรวจข้างใน ถ้ามีอะไรต้องซ่อนใส่กลับเป็น string ของ JSON ที่ซ่อนแล้ว"""
         data = parse_json(text)
+        if data is TOO_DEEP_JSON or (isinstance(data, (dict, list)) and depth >= MAX_NESTED_JSON):
+            return ScannedJson.kept(text, unscanned=True)  # ซ้อนลึกเกิน: ไม่ตรวจต่อ แต่บอกว่ายังไม่ได้ตรวจ
         if not isinstance(data, (dict, list)):
-            return ScannedJson(text, redacted=False, unscanned=False)  # ข้อความธรรมดาที่ขึ้นต้นด้วย { หรือ [
-        if nested >= MAX_NESTED_JSON:
-            return ScannedJson(text, redacted=False, unscanned=True)  # ซ้อนลึกเกินเพดาน: ไม่ตรวจต่อ
-        scanned = self._scan_json(data, nested + 1)
-        if not scanned.redacted:
-            return ScannedJson(text, redacted=False, unscanned=scanned.unscanned)
-        return ScannedJson(json.dumps(scanned.value, ensure_ascii=False), True, scanned.unscanned)
+            return ScannedJson.kept(text)  # ข้อความธรรมดาที่ขึ้นต้นด้วย { หรือ [
+        scanned = self._scan_json(data, depth + 1)
+        return ScannedJson(scanned.as_text(text), redacted=scanned.redacted, unscanned=scanned.unscanned)

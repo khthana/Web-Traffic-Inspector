@@ -10,6 +10,8 @@ from inspector.capture_events import RequestStarted, ResponseReceived
 from inspector.models import HttpExchange, Recording
 from inspector.redactor import REDACTED, Redactor
 
+BOM = chr(0xFEFF)  # byte order mark
+
 SECRET = "X-real-secret-42"
 FBP = "fb.2.1794106032950.123456789"
 
@@ -89,9 +91,22 @@ def test_nesting_beyond_the_limit_is_flagged_unscanned() -> None:
 
 def test_deeply_nested_json_does_not_crash() -> None:
     body = "[" * 100_000 + "]" * 100_000  # json.loads ลึกขนาดนี้ไม่ได้ (RecursionError)
-    for kind in ("json", "text"):
-        result = Redactor().body(body, kind, "application/json")
+    assert Redactor().body(body, "json", "application/json").unscanned is True
+    assert Redactor().body(body, "text", "text/plain").unscanned is True
+
+
+def test_string_too_deep_to_parse_is_flagged_unscanned_and_the_rest_is_still_redacted() -> None:
+    deep = "[" * 5000 + json.dumps({"password": SECRET}) + "]" * 5000  # json.loads ทำไม่ได้: ห้ามนับว่าเป็นข้อความธรรมดา
+    body = json.dumps({"p": deep, "token": SECRET})
+    for kind, content_type in (("json", "application/json"), ("text", "text/plain")):
+        result = Redactor().body(body, kind, content_type)  # type: ignore[arg-type]
         assert result.unscanned is True
+        assert result.text is not None and json.loads(result.text)["token"] == REDACTED
+
+
+def test_nested_json_with_a_byte_order_mark_is_redacted() -> None:
+    result = redacted({"payload": BOM + json.dumps({"password": SECRET})})
+    assert SECRET not in json.dumps(result)
 
 
 def test_pairs_and_nested_json_never_reach_any_output(harness: Harness) -> None:
@@ -122,15 +137,26 @@ def test_pairs_and_nested_json_never_reach_any_output(harness: Harness) -> None:
     assert exchange["response"]["body_unscanned"] is False
 
 
-def test_recording_with_raw_pairs_is_redacted_when_opened(harness: Harness) -> None:
-    harness.feed(post('{"event":"x"}'))
+def test_recording_with_raw_pairs_and_nested_json_is_redacted_when_opened(harness: Harness) -> None:
+    harness.feed(
+        post('{"event":"x"}'),
+        ResponseReceived(
+            request_key="r1", ts=1050.0, status=200, status_text="OK",
+            headers={"Content-Type": "application/json"}, body='{"ok":true}',
+        ),
+    )
     recording = Recording.model_validate(harness.get("/api/export"))
     stored = recording.exchanges[0]
-    raw = json.dumps([{"name": "_fbp", "value": FBP}])
+    assert stored.response is not None
     old: HttpExchange = stored.model_copy(
-        update={"has_redactions": False, "request": stored.request.model_copy(update={"body": raw})}
+        update={
+            "has_redactions": False,
+            "request": stored.request.model_copy(update={"body": json.dumps([{"name": "_fbp", "value": FBP}])}),
+            "response": stored.response.model_copy(update={"body": json.dumps({"data": json.dumps({"token": SECRET})})}),
+        }
     )
     with build_harness(recording=recording.model_copy(update={"exchanges": [old]}), recording_file="old.json") as opened:
         exchange = opened.get(f"/api/exchanges/{old.id}")
     assert FBP not in exchange["request"]["body"]
+    assert SECRET not in exchange["response"]["body"]
     assert exchange["has_redactions"] is True
