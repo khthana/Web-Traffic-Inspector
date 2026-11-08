@@ -25,7 +25,7 @@ from pipeline_factory import new_pipeline
 
 from inspector.broadcaster import Broadcaster
 from inspector.capture import TrafficCapture
-from inspector.chrome import ChromeConnector
+from inspector.chrome import ChromeConnector, PlaywrightFactory
 from inspector.store import EventStore
 
 CHROME_CANDIDATES = [
@@ -126,11 +126,20 @@ class ChromeProcess:
 class LiveInspector:
     """Inspector ทั้งตัว (ไม่มี FastAPI) ที่ต่อกับ Chrome จริง"""
 
-    def __init__(self, cdp_url: str, inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,)) -> None:
+    def __init__(
+        self,
+        cdp_url: str,
+        inspector_origins: tuple[str, ...] = (INSPECTOR_ORIGIN,),
+        playwright_factory: PlaywrightFactory = async_playwright,
+    ) -> None:
         self.pipeline = new_pipeline(EventStore(), Broadcaster())
         capture = TrafficCapture(sink=self.pipeline.handle, inspector_origins=inspector_origins)
         self.connector = ChromeConnector(
-            cdp_url, on_context=capture.attach, on_status=self.pipeline.set_chrome_connected, retry_s=0.5
+            cdp_url,
+            on_context=capture.attach,
+            on_status=self.pipeline.set_chrome_connected,
+            retry_s=0.5,
+            playwright_factory=playwright_factory,
         )
 
     def exchanges(self) -> list[dict[str, Any]]:

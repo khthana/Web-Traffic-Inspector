@@ -5,12 +5,15 @@
 """
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 from chrome_support import INSPECTOR_ORIGIN, ChromeProcess, LiveInspector, run_live, serve, wait_until
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from playwright.async_api import Playwright, async_playwright
 
 pytestmark = pytest.mark.chrome
 
@@ -137,3 +140,35 @@ def test_reconnects_after_chrome_restarts(chrome: ChromeProcess, site: str) -> N
         await wait_until(lambda: inspector.status()["chrome"] == "connected", timeout=5.0)
 
     run_live(chrome.cdp_url, scenario)
+
+
+def crash_dispatcher(playwright: Playwright) -> None:
+    """จำลองบั๊กของ Playwright 1.64: ข้อความถัดไปจาก driver ทำให้ตัวกระจายข้อความตาย (KeyError)
+    หลังจากนั้นทุกคำสั่งของ Playwright ตัวนี้จะรอคำตอบไปตลอด"""
+
+    def dispatch(message: dict[str, Any]) -> None:
+        raise KeyError("browser-context@gone")
+
+    setattr(playwright._impl_obj._connection, "dispatch", dispatch)
+
+
+def test_reconnects_when_the_playwright_driver_crashes(chrome: ChromeProcess, site: str) -> None:
+    started: list[Playwright] = []
+
+    @asynccontextmanager
+    async def recording_playwright() -> AsyncIterator[Playwright]:
+        async with async_playwright() as playwright:
+            started.append(playwright)
+            yield playwright
+
+    chrome.start()
+
+    async def scenario(inspector: LiveInspector) -> None:
+        await wait_until(lambda: inspector.status()["chrome"] == "connected")
+        crash_dispatcher(started[-1])
+        chrome.open_tab(site + "/")  # แท็บใหม่ = ข้อความจาก driver → ตัวกระจายข้อความตาย
+        await wait_until(lambda: len(started) == 2 and inspector.status()["chrome"] == "connected")
+        chrome.open_tab(site + "/")
+        await wait_until(lambda: any(e["request"]["path"] == "/api/xhr" for e in inspector.exchanges()))
+
+    run_live(chrome.cdp_url, scenario, playwright_factory=recording_playwright)
