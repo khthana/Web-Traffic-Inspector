@@ -31,6 +31,7 @@ IGNORED_SCHEMES = ("about:", "chrome:", "chrome-extension:", "devtools:", "chrom
 TEXT_HINTS = ("json", "text/", "xml", "javascript", "x-www-form-urlencoded", "graphql", "multipart/")
 BODYLESS_METHODS = ("GET", "HEAD", "OPTIONS")
 MISSING_FORM_BODY = "อ่าน body ของฟอร์มที่แนบไฟล์จาก Chrome ไม่ได้ (multipart/form-data)"
+MAX_LEFT_OUT_BODY_BYTES = 1024 * 1024  # Chrome ส่ง body ก้อนใหญ่ผ่าน CDP ช้ามาก (11 MB ราว 25 วินาที) จึงไม่ขอ
 
 
 def is_inspector_url(url: str, inspector_origins: tuple[str, ...]) -> bool:
@@ -180,7 +181,7 @@ class TrafficCapture:
     async def _start(self, request: Request, page: Page, page_url: str, ts: float) -> str:
         """ส่ง RequestStarted แล้วคืน request_key"""
         headers = await all_headers(request)
-        post_data, body_error = await self._post_data(request, page, header(headers, "content-type"))
+        post_data, body_error = await self._post_data(request, page, headers)
         self._next_request += 1
         key = f"req-{self._next_request}"
         self._sink(
@@ -261,15 +262,22 @@ class TrafficCapture:
         except PlaywrightError:  # request จาก service worker ไม่มี frame
             return None
 
-    async def _post_data(self, request: Request, page: Page, content_type: str) -> tuple[str | None, str | None]:
+    async def _post_data(self, request: Request, page: Page, headers: dict[str, str]) -> tuple[str | None, str | None]:
         """(body, เหตุผลที่ไม่มี body)"""
+        content_type = header(headers, "content-type")
         try:
             raw = request.post_data_buffer
         except PlaywrightError:
             raw = None
-        if raw is None and content_type and request.method not in BODYLESS_METHODS:
-            raw = await self._left_out_body(request, page)  # เช่น FormData ที่มี Blob/File
+        too_large = self._too_large(headers)
+        if raw is None and content_type and request.method not in BODYLESS_METHODS and too_large is None:
+            raw = await self._left_out_body(request, page, is_multipart(content_type))  # เช่น FormData ที่มี Blob/File
+        if raw is not None and len(raw) > MAX_LEFT_OUT_BODY_BYTES:
+            too_large = describe_size(len(raw))
+            raw = None
         if raw is None:
+            if too_large is not None:
+                return None, f"body ใหญ่เกินจะแสดง ({too_large})"
             return None, MISSING_FORM_BODY if is_multipart(content_type) else None
         if is_multipart(content_type):
             return decode_multipart(raw), None
@@ -278,13 +286,23 @@ class TrafficCapture:
         except UnicodeDecodeError:  # body เป็น binary ที่ decode เป็นข้อความไม่ได้
             return None, None
 
-    async def _left_out_body(self, request: Request, page: Page) -> bytes | None:
+    async def _left_out_body(self, request: Request, page: Page, is_form: bool) -> bytes | None:
         """ขอ body ที่ Chrome ไม่ได้แนบมากับ request จาก PostDataReader ของแท็บนั้น"""
         task = self._readers.get(page)
         if task is None:
             return None
-        try:
-            reader = await asyncio.shield(task)
-        except asyncio.CancelledError:
+        await asyncio.wait({task})  # ไม่ใช้ await task: ถ้า task ถูกยกเลิก ต้องไม่ยกเลิกตัวเราไปด้วย
+        reader = None if task.cancelled() else task.result()
+        if reader is None:
             return None
-        return None if reader is None else await reader.read(request.method, request.url)
+        # รอ event ของ CDP เฉพาะฟอร์มที่มีไฟล์ ที่เหลือ (เช่น POST ไม่มี body) อ่านเฉพาะที่ Chrome บอกไว้แล้ว
+        return await reader.read(request.method, request.url, wait=is_form)
+
+    @staticmethod
+    def _too_large(headers: dict[str, str]) -> str | None:
+        """ขนาดที่บอกใน Content-Length ถ้าใหญ่เกินจะขอ body มา"""
+        try:
+            length = int(header(headers, "content-length") or 0)
+        except ValueError:
+            return None
+        return describe_size(length) if length > MAX_LEFT_OUT_BODY_BYTES else None

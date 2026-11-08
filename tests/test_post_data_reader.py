@@ -31,12 +31,15 @@ class FakeSession:
             return self._bodies[params["requestId"]]
         return {}
 
-    def emit(self, request_id: str, method: str, url: str, has_post_data: bool = True, post_data: str | None = None) -> None:
+    def emit(
+        self, request_id: str, method: str, url: str,
+        has_post_data: bool = True, post_data: str | None = None, kind: str = "Fetch",
+    ) -> None:
         request: dict[str, Any] = {"method": method, "url": url, "hasPostData": has_post_data}
         if post_data is not None:
             request["postData"] = post_data
         for handler in self._handlers.get("Network.requestWillBeSent", []):
-            handler({"requestId": request_id, "request": request})
+            handler({"requestId": request_id, "request": request, "type": kind})
 
 
 def encoded(raw: bytes) -> dict[str, Any]:
@@ -145,3 +148,33 @@ def test_forgets_old_unread_requests_so_memory_stays_bounded() -> None:
         return reader.remembered()
 
     assert asyncio.run(scenario()) <= 200
+
+
+def test_form_posts_that_are_not_fetch_or_xhr_are_never_matched() -> None:
+    # หน้าเว็บส่งฟอร์มแบบเปลี่ยนหน้า (Document) ไป URL เดียวกัน: ห้ามเอา body ของมันไปให้ fetch ทีหลัง
+    session = FakeSession({"7.1": encoded(b"form post"), "7.2": encoded(b"fetch")})
+
+    async def scenario() -> bytes | None:
+        reader = await started(session)
+        session.emit("7.1", "POST", "https://shop.example/api/upload", kind="Document")
+        session.emit("7.2", "POST", "https://shop.example/api/upload", kind="XHR")
+        return await reader.read("POST", "https://shop.example/api/upload")
+
+    assert asyncio.run(scenario()) == b"fetch"
+
+
+def test_without_waiting_only_requests_already_seen_are_read() -> None:
+    # POST ที่มี content-type แต่ไม่มี body: Chrome ไม่บอก hasPostData จึงต้องไม่รอเปล่า
+    session = FakeSession({"7.1": encoded(b"blob")})
+
+    async def scenario() -> tuple[bytes | None, bytes | None, float]:
+        reader = await started(session, wait_seconds=5)
+        loop = asyncio.get_running_loop()
+        began = loop.time()
+        missing = await reader.read("POST", "https://shop.example/api/empty", wait=False)
+        elapsed = loop.time() - began
+        session.emit("7.1", "POST", "https://shop.example/api/blob")
+        return missing, await reader.read("POST", "https://shop.example/api/blob", wait=False), elapsed
+
+    missing, found, elapsed = asyncio.run(scenario())
+    assert missing is None and found == b"blob" and elapsed < 0.5

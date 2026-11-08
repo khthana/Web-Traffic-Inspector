@@ -13,11 +13,15 @@ from typing import Any, Protocol
 MAX_REMEMBERED = 200  # request ที่รอให้ขอ body แต่ไม่มีใครขอ (เช่น ฟอร์มที่ไม่ใช่ fetch/xhr) ทิ้งตัวเก่าไป
 DEFAULT_WAIT_SECONDS = 1.0
 
+WATCHED_TYPES = ("Fetch", "XHR")  # ตรงกับที่ TrafficCapture ดัก: ฟอร์มที่เปลี่ยนหน้า (Document) ไม่นับ
 RequestKey = tuple[str, str]  # (method, url): Playwright ไม่บอก requestId ของ CDP จึงจับคู่ด้วยค่านี้
 
 
 class CdpSession(Protocol):
-    """ส่วนที่ใช้ของ CDP session (Playwright CDPSession ก็มีรูปแบบนี้)"""
+    """ส่วนที่ใช้ของ CDP session
+
+    สอนแนวคิด: Protocol — บอกแค่ "ต้องมีเมธอดอะไร" Playwright CDPSession จึงใช้ได้โดยไม่ต้องสืบทอด
+    """
 
     def on(self, event: str, f: Callable[[dict[str, Any]], None]) -> None: ...
 
@@ -43,9 +47,12 @@ class PostDataReader:
         self._session.on("Network.requestWillBeSent", self._on_request)
         await self._session.send("Network.enable")
 
-    async def read(self, method: str, url: str) -> bytes | None:
-        """body ของ request นี้ หรือ None ถ้า Chrome ไม่ได้บอกว่ามี body ค้างอยู่ หรือให้ body ไม่ได้"""
-        request_id = await self._request_id((method, url))
+    async def read(self, method: str, url: str, wait: bool = True) -> bytes | None:
+        """body ของ request นี้ หรือ None ถ้า Chrome ไม่ได้บอกว่ามี body ค้างอยู่ หรือให้ body ไม่ได้
+
+        `wait=False`: ไม่รอ event ของ CDP ที่อาจมาช้า (ใช้เมื่อ request นี้อาจไม่มี body เลย จะได้ไม่ค้างเปล่า)
+        """
+        request_id = await self._request_id((method, url), wait)
         if request_id is None:
             return None
         try:
@@ -63,8 +70,8 @@ class PostDataReader:
 
     def _on_request(self, event: dict[str, Any]) -> None:
         request = event.get("request", {})
-        if not request.get("hasPostData") or "postData" in request:
-            return  # ไม่มี body หรือ Chrome แนบมาให้แล้ว
+        if event.get("type") not in WATCHED_TYPES or not request.get("hasPostData") or "postData" in request:
+            return  # ไม่ใช่ fetch/xhr, ไม่มี body หรือ Chrome แนบมาให้แล้ว
         key: RequestKey = (str(request.get("method")), str(request.get("url")))
         waiters = self._waiting.get(key)
         while waiters:
@@ -80,13 +87,15 @@ class PostDataReader:
             if not self._ready[oldest]:
                 del self._ready[oldest]
 
-    async def _request_id(self, key: RequestKey) -> str | None:
+    async def _request_id(self, key: RequestKey, wait: bool) -> str | None:
         ids = self._ready.get(key)
         if ids:
             request_id = ids.popleft()
             if not ids:
                 del self._ready[key]
             return request_id
+        if not wait:
+            return None
         waiter: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._waiting.setdefault(key, deque()).append(waiter)
         try:

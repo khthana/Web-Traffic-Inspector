@@ -24,6 +24,9 @@ PAGE = """<!doctype html>
   upload.append('avatar', new Blob([new Uint8Array([0x89, 0x50, 0xff, 0xfe])], {type: 'image/png'}), 'avatar.png');
   // รอให้ Inspector เปิด CDP session ของแท็บใหม่ก่อน (ผู้ใช้จริงกดอัปโหลดหลังหน้าโหลดเสร็จอยู่แล้ว)
   setTimeout(() => fetch('/api/upload', {method: 'POST', body: upload}), 500);
+  const video = new FormData();
+  video.append('clip', new Blob([new Uint8Array(2 * 1024 * 1024)], {type: 'video/mp4'}), 'clip.mp4');
+  setTimeout(() => fetch('/api/upload-video', {method: 'POST', body: video}), 500);
   fetch('/api/multipart-answer');
 </script></body></html>""" % (PASSWORD, PASSWORD)
 
@@ -43,6 +46,7 @@ def fixture_app() -> FastAPI:
 
     @app.post("/api/register")
     @app.post("/api/upload")
+    @app.post("/api/upload-video")
     async def register(request: Request) -> JSONResponse:
         await request.body()
         return JSONResponse({"ok": True})
@@ -66,7 +70,7 @@ def test_form_fields_are_redacted_part_by_part(chrome: ChromeProcess, site: str)
     async def scenario(inspector: LiveInspector) -> None:
         await wait_until(lambda: inspector.status()["chrome"] == "connected")
         chrome.open_tab(site + "/")
-        await wait_until(lambda: len([e for e in inspector.exchanges() if e["state"] == "done"]) >= 3)
+        await wait_until(lambda: len([e for e in inspector.exchanges() if e["state"] == "done"]) >= 4)
         by_path = {e["request"]["path"]: e for e in inspector.exchanges()}
 
         register = by_path["/api/register"]
@@ -83,6 +87,10 @@ def test_form_fields_are_redacted_part_by_part(chrome: ChromeProcess, site: str)
         assert "[ไฟล์: avatar.png, image/png, 4 B]" in upload["body"]
         assert 'name="password"\r\n\r\n••••' in upload["body"] and PASSWORD not in upload["body"]
         assert by_path["/api/upload"]["has_redactions"] is True
+
+        # ไฟล์ใหญ่เกิน 1 MB ไม่ขอ body มา (Chrome ส่งผ่าน CDP ช้ามาก)
+        video = by_path["/api/upload-video"]["request"]
+        assert video["body"] is None and video["body_error"].startswith("body ใหญ่เกินจะแสดง (2048.")
         assert PASSWORD not in str(by_path["/api/upload"])
 
         answer = by_path["/api/multipart-answer"]["response"]

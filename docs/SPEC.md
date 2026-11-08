@@ -409,6 +409,7 @@ web-traffic-inspector/
 │  ├─ chrome.py          # ChromeConnector + คำสั่งเปิด Chrome ตาม OS
 │  ├─ chrome_launcher.py # --launch-chrome: หา Chrome ในเครื่องแล้วเปิดโหมด debug
 │  ├─ capture.py         # TrafficCapture
+│  ├─ post_data.py       # PostDataReader: ขอ body ที่ Chrome ไม่แนบมา (ฟอร์มที่มีไฟล์)
 │  ├─ click_tracker.py   # ClickTracker
 │  ├─ click_hook.js      # สคริปต์ที่ฉีดเข้าหน้าเว็บ
 │  ├─ filters.py         # FilterRule + subclasses, FilterChain, Preset
