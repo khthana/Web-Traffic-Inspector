@@ -1,14 +1,23 @@
 """สคริปต์ดับเบิลคลิกและ README ต้องตรงกับโค้ด: flag ของ Chrome ชุดเดียวกับ --launch-chrome และตาราง CLI ครบทุก option"""
 
+import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
 from inspector.__main__ import build_parser
-from inspector.chrome import DEFAULT_CDP_PORT, PROFILE_NAME_POSIX, PROFILE_NAME_WINDOWS, START_URL, debug_flags
+from inspector.chrome import (
+    DEFAULT_CDP_PORT,
+    PROFILE_NAME_POSIX,
+    PROFILE_NAME_WINDOWS,
+    START_URL,
+    chrome_launch_command,
+    debug_flags,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 WINDOWS_SCRIPT = ROOT / "scripts" / "start_chrome.bat"
@@ -81,3 +90,54 @@ def test_readme_covers_what_a_new_student_needs() -> None:
     ):
         assert must in readme, must
     assert readme.count("- [ ]") >= 10  # checklist ทดสอบกับเว็บจริง (SPEC 9.2)
+
+
+def run_mac_script(home: Path) -> subprocess.CompletedProcess[str]:
+    """รันสคริปต์ macOS ด้วย sh โดยให้ HOME ชี้ไปที่โฟลเดอร์ทดสอบ (ไม่แตะโปรไฟล์จริงของเครื่อง)"""
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("ไม่มี sh ในเครื่องนี้")
+    if Path("/Applications/Google Chrome.app").exists():
+        pytest.skip("เครื่องนี้มี Chrome ใน /Applications: สคริปต์จะเปิด Chrome จริงแทนตัวปลอม")
+    env = {"HOME": home.as_posix(), "PATH": os.environ.get("PATH", "")}  # macOS เก็บ nohup ไว้ที่ /usr/bin
+    return subprocess.run([sh, MAC_SCRIPT.as_posix()], env=env, capture_output=True, encoding="utf-8", timeout=10)
+
+
+def test_mac_script_starts_chrome_from_home_applications_with_debug_flags(tmp_path: Path) -> None:
+    # ติดตั้ง Chrome ปลอมใน ~/Applications ที่จดอาร์กิวเมนต์ที่ได้รับไว้
+    received = tmp_path / "received.txt"
+    chrome = tmp_path / "Applications" / "Google Chrome.app" / "Contents" / "MacOS" / "Google Chrome"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text(f'#!/bin/sh\nfor arg in "$@"; do echo "$arg"; done > "{received.as_posix()}"\n', newline="\n")
+    chrome.chmod(0o755)
+
+    result = run_mac_script(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "python3 -m inspector" in result.stdout
+    deadline = time.monotonic() + 5  # Chrome ถูกเปิดแบบ nohup ... & จึงอาจเขียนไฟล์หลังสคริปต์จบ
+    while not (received.exists() and received.read_text(encoding="utf-8").endswith(START_URL + "\n")):
+        assert time.monotonic() < deadline, "Chrome ปลอมไม่ถูกเรียกภายใน 5 วินาที (สคริปต์หา nohup หรือ Chrome ไม่เจอ?)"
+        time.sleep(0.05)
+    args = received.read_text(encoding="utf-8").splitlines()
+    profiles = [arg for arg in args if arg.startswith("--user-data-dir=")]
+    # sh บน Windows (Git Bash) เขียน HOME เป็น /tmp/... จึงเทียบแค่ท้าย path ของโปรไฟล์
+    assert len(profiles) == 1 and profiles[0].endswith(f"/{tmp_path.name}/{PROFILE_NAME_POSIX}")
+    expected = [*debug_flags(DEFAULT_CDP_PORT, "PROFILE"), START_URL]
+    assert [arg for arg in args if arg not in profiles] == [arg for arg in expected if "PROFILE" not in arg]
+
+
+def test_mac_script_explains_when_chrome_is_not_installed(tmp_path: Path) -> None:
+    result = run_mac_script(tmp_path)
+    assert result.returncode == 1
+    assert "ไม่พบ Google Chrome" in result.stdout
+
+
+def test_mac_command_shown_by_inspector_matches_the_script() -> None:
+    # คำสั่งที่ขึ้นใน "ไม่พบ Chrome" ต้องทำแบบเดียวกับสคริปต์: nohup ... & ปิด Terminal แล้ว Chrome ไม่ปิดตาม
+    script_words = words(MAC_SCRIPT)
+    in_script = script_words[script_words.index("nohup") : script_words.index("&") + 1]
+    shown = chrome_launch_command(f"http://127.0.0.1:{DEFAULT_CDP_PORT}", "Darwin")
+    mac_chrome = '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"'
+    assert mac_chrome in shown
+    assert shown.replace(mac_chrome, '"$CHROME"').split() == in_script

@@ -49,14 +49,15 @@ def chrome_launch_command(cdp_url: str, system: str | None = None) -> str:
     system = system or platform.system()
     if system == "Windows":
         executable = r'& "C:\Program Files\Google\Chrome\Application\chrome.exe"'
-        profile, background = rf'"$env:LOCALAPPDATA\{PROFILE_NAME_WINDOWS}"', ""
-    elif system == "Darwin":
+        flags = debug_flags(port, rf'"$env:LOCALAPPDATA\{PROFILE_NAME_WINDOWS}"')
+        return " ".join([executable, *flags, START_URL])
+    if system == "Darwin":
         executable = '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"'
-        profile, background = f'"$HOME/{PROFILE_NAME_POSIX}"', " &"
     else:
         executable = "google-chrome"
-        profile, background = f'"$HOME/{PROFILE_NAME_POSIX}"', " &"
-    return " ".join([executable, *debug_flags(port, profile), START_URL]) + background
+    # nohup ... &: ปิดหน้าต่าง Terminal แล้ว Chrome ไม่ปิดตาม (แบบเดียวกับ scripts/start_chrome.command)
+    flags = debug_flags(port, f'"$HOME/{PROFILE_NAME_POSIX}"')
+    return " ".join(["nohup", executable, *flags, START_URL, ">/dev/null", "2>&1", "&"])
 
 
 class ChromeConnector:
