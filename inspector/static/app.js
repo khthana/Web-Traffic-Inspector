@@ -324,7 +324,7 @@ class StatusView {
   }
 
   label(status) {
-    if (isPlayback(status)) return `โหมดเล่นซ้ำ: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
+    if (isPlayback(status)) return `Open Recording: ${status.recording_file}`; // ไม่ต่อ Chrome โดยตั้งใจ
     if (status.chrome !== "connected") return "ไม่พบ Chrome";
     return status.paused ? "หยุดชั่วคราว" : `เชื่อมต่อแล้ว · ${status.tabs.length} แท็บ`;
   }

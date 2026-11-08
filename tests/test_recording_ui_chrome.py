@@ -50,7 +50,7 @@ def test_playback_mode_and_export_buttons(playback: str, tmp_path: Path) -> None
         await page.wait_for_selector('.card:has-text("ปุ่มที่ 2")')
 
         # ไม่ต่อ Chrome โดยตั้งใจ: ไม่สอนวิธีเปิด Chrome ไม่เตือนว่าหลุด และไม่มีปุ่มหยุด
-        assert await page.text_content("#chrome-status .label") == "โหมดเล่นซ้ำ: lab-01.json"
+        assert await page.text_content("#chrome-status .label") == "Open Recording: lab-01.json"
         assert not await page.is_visible("#chrome-setup")
         assert not await page.is_visible("#chrome-banner")
         assert not await page.is_visible("#pause-toggle")
