@@ -14,8 +14,10 @@ from inspector.multipart import FormPart, parse_multipart
 
 REDACTED = "••••"
 SENSITIVE_KEY = re.compile(r"pass|token|secret|session|otp|card|phone|mobile|email|address|citizen|id_card", re.I)
-# รหัสติดตามผู้ใช้ข้ามเว็บ (Facebook, Google): ชื่อสั้นจึงต้องไม่มีตัวอักษรติดอยู่ เช่น `_ga`, `fb.fbp` แต่ไม่ใช่ `language`
-TRACKING_ID_KEY = re.compile(r"(?<![a-z])(?:fbp|fbc|fbclid|gclid|ga)(?![a-z])", re.I)
+# รหัสติดตามผู้ใช้ข้ามเว็บ (Facebook, Google, Microsoft, TikTok): ชื่อสั้นจึงต้องเป็นคำทั้งคำในชื่อ key
+# เช่น `_ga`, `fb.fbp`, `gaClientId` แต่ไม่ใช่ `language` หรือ `mega`
+TRACKING_ID_WORDS = frozenset({"fbp", "fbc", "fbclid", "gclid", "gcl", "ga", "msclkid", "ttclid"})
+KEY_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")  # คำใน key: แยกที่ตัวที่ไม่ใช่ตัวอักษรและที่ camelCase
 SENSITIVE_HEADER_NAMES = frozenset({"cookie", "set-cookie", "authorization", "proxy-authorization"})
 SENSITIVE_HEADER_PART = re.compile(r"token|session|auth|csrf|key|secret", re.I)
 URL_HEADER_NAMES = frozenset({"referer", "location", "content-location"})
@@ -29,6 +31,16 @@ def to_valid_text(text: str) -> str:
     return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
 
 
+NOT_JSON = object()  # parse_json คืนค่านี้เมื่อ parse ไม่ได้ (None แยกไม่ออกจาก JSON `null`)
+
+
+def parse_json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except ValueError:
+        return NOT_JSON
+
+
 def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> BodyKind:
     """ชนิดของ body ใน Recording: รุ่นก่อนเก็บฟอร์ม multipart เป็น binary จึงดูจาก content-type ใหม่"""
     return "multipart" if body_kind(headers, body) == "multipart" else kind
@@ -36,7 +48,12 @@ def recorded_kind(kind: BodyKind, headers: dict[str, str], body: str | None) -> 
 
 def is_sensitive_key(key: str) -> bool:
     """key ใน JSON, form หรือ query ที่ต้องซ่อนค่า (ข้อมูลส่วนตัว ข้อมูลยืนยันตัวตน และรหัสติดตามผู้ใช้)"""
-    return SENSITIVE_KEY.search(key) is not None or TRACKING_ID_KEY.search(key) is not None
+    return SENSITIVE_KEY.search(key) is not None or is_tracking_id_key(key)
+
+
+def is_tracking_id_key(key: str) -> bool:
+    """key ที่มีรหัสติดตามผู้ใช้เป็นคำหนึ่งในชื่อ (`_ga_ABC` → ga, abc และ `fbpValue` → fbp, value)"""
+    return any(word.lower() in TRACKING_ID_WORDS for word in KEY_WORD.findall(key))
 
 
 def is_sensitive_header(name: str) -> bool:
@@ -165,24 +182,21 @@ class Redactor:
         )
 
     def _json_body(self, body: str) -> RedactedBody:
-        try:
-            data = json.loads(body)
-        except ValueError:
+        data = parse_json(body)
+        if data is NOT_JSON:
             return RedactedBody(body, unscanned=True)  # parse ไม่ได้: ส่งผ่านไป แต่บอกว่ายังไม่ได้ตรวจ
-        return self._parsed_json_body(body, data)
+        return self._redact_parsed_json(body, data)
 
     def _text_body(self, body: str) -> RedactedBody:
         """text ที่จริงๆ เป็น JSON object หรือ array (เช่น sendBeacon ส่ง JSON เป็น text/plain) ตรวจด้วยกฎของ JSON
         นอกนั้น (ข้อความธรรมดา, JSON ที่ถูกตัดที่ 64 KB, ค่าเดี่ยว) เดารูปแบบไม่ได้"""
-        try:
-            data = json.loads(body)
-        except ValueError:
-            return RedactedBody(body, unscanned=True)
+        data = parse_json(body)
         if not isinstance(data, (dict, list)):
             return RedactedBody(body, unscanned=True)
-        return self._parsed_json_body(body, data)
+        return self._redact_parsed_json(body, data)
 
-    def _parsed_json_body(self, body: str, data: Any) -> RedactedBody:
+    def _redact_parsed_json(self, body: str, data: Any) -> RedactedBody:
+        """รับทั้งข้อความเดิมและค่าที่ parse แล้ว: ไม่มีอะไรต้องซ่อนก็คืนข้อความเดิม (รูปแบบเดิม) ไม่งั้นเขียนใหม่"""
         if not self._has_sensitive_key(data):
             return RedactedBody(body, unscanned=False)  # ไม่มีอะไรต้องซ่อน: คงรูปแบบเดิมไว้
         # เขียนใหม่จากค่าที่ parse แล้วเสมอ key ซ้ำในต้นฉบับจึงลักลอบส่งค่าจริงออกไปไม่ได้

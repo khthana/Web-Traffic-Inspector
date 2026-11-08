@@ -4,22 +4,22 @@
 import json
 
 import pytest
-from conftest import Harness
+from conftest import Harness, build_harness
 
 from inspector.capture_events import RequestStarted, ResponseReceived
-from inspector.models import HttpExchange
-from inspector.redactor import Redactor, is_sensitive_key
+from inspector.models import HttpExchange, Recording
+from inspector.redactor import is_sensitive_key
 
 FBP = "fb.2.1794106032950.123456789"
 PASSWORD = "hunter2-p@ss"
 BEACON = json.dumps({"event": "page_view", "fb.fbp": FBP, "user": {"password": PASSWORD}, "items": [1, 2]})
 
 
-def beacon(body: str = BEACON, content_type: str = "text/plain;charset=UTF-8") -> RequestStarted:
+def beacon(body: str = BEACON) -> RequestStarted:
     return RequestStarted(
         request_key="r1", tab_id="tab-1", page_url="https://shop.example/", ts=1000.0, method="POST",
         url="https://collect.example/events", resource_type="fetch",
-        headers={"Content-Type": content_type}, post_data=body,
+        headers={"Content-Type": "text/plain;charset=UTF-8"}, post_data=body,
     )
 
 
@@ -81,39 +81,44 @@ def test_text_json_response_is_redacted_too(harness: Harness) -> None:
         beacon(),
         ResponseReceived(
             request_key="r1", ts=1050.0, status=200, status_text="OK",
-            headers={"Content-Type": "text/html"}, body=json.dumps({"session": "s3cr3t", "ok": True}),
+            headers={"Content-Type": "text/html"}, body=json.dumps({"session": "s3cr3t", "_fbp": FBP, "ok": True}),
         ),
     )
     response = harness.get("/api/exchanges/ex_0001")["response"]
-    assert json.loads(response["body"]) == {"session": "••••", "ok": True}
+    assert json.loads(response["body"]) == {"session": "••••", "_fbp": "••••", "ok": True}
     assert response["body_unscanned"] is False
 
 
-def test_recording_with_unscanned_text_json_is_redacted_on_load(harness: Harness) -> None:
+def test_recording_with_unscanned_text_json_is_redacted_when_opened(harness: Harness) -> None:
+    # Recording รุ่นก่อนเก็บ JSON ที่ส่งเป็น text ไว้โดยไม่ได้ตรวจ: Open Recording ต้องซ่อนให้
     harness.feed(beacon('{"event":"x"}'))
-    stored = HttpExchange.model_validate(harness.get("/api/exchanges/ex_0001"))
-    old = stored.model_copy(
+    recording = Recording.model_validate(harness.get("/api/export"))
+    stored = recording.exchanges[0]
+    old: HttpExchange = stored.model_copy(
         update={
             "has_redactions": False,
             "request": stored.request.model_copy(update={"body": BEACON, "body_unscanned": True}),
         }
     )
-    loaded = Redactor().exchange(old)
-    assert loaded.request.body is not None
-    assert FBP not in loaded.request.body and PASSWORD not in loaded.request.body
-    assert not loaded.request.body_unscanned
-    assert loaded.has_redactions
+    with build_harness(recording=recording.model_copy(update={"exchanges": [old]}), recording_file="old.json") as opened:
+        exchange = opened.get(f"/api/exchanges/{old.id}")
+    assert FBP not in exchange["request"]["body"] and PASSWORD not in exchange["request"]["body"]
+    assert exchange["request"]["body_unscanned"] is False
+    assert exchange["has_redactions"] is True
 
 
 @pytest.mark.parametrize(
     "key",
-    ["fb.fbp", "_fbp", "fbp", "_fbc", "fbc", "_ga", "_ga_ABC123", "ga", "gclid", "fbclid", "_gcl_au_gclid"],
+    [
+        "fb.fbp", "_fbp", "fbp", "_fbc", "fbc", "_ga", "_ga_ABC123", "ga", "gclid", "fbclid", "_gcl_au_gclid",
+        "fbpValue", "gaClientId", "FBP", "_gcl_au", "msclkid", "ttclid",  # camelCase, ตัวใหญ่ และ click id อื่น
+    ],
 )
 def test_tracking_ids_are_sensitive(key: str) -> None:
     assert is_sensitive_key(key)
 
 
-@pytest.mark.parametrize("key", ["fb_page", "fbpage", "language", "gallery", "tag", "mega", "fbcode", "page"])
+@pytest.mark.parametrize("key", ["fb_page", "fbpage", "language", "gallery", "tag", "mega", "MEGA", "saga", "fbcode", "page", "Gallery"])
 def test_words_that_only_contain_tracking_letters_are_kept(key: str) -> None:
     assert not is_sensitive_key(key)
 
