@@ -43,6 +43,10 @@ def inspector() -> Iterator[str]:
             url="https://shop.example/api/notifications", resource_type="xhr",
         ),
         ResponseReceived(request_key="poll", ts=T0 - 59_950, status=200, status_text="OK", body="[]"),
+        RequestStarted(
+            request_key="meta", tab_id="tab-1", page_url=PAGE, ts=T0 - 30_000, method="POST",
+            url="https://www.adviceit.co.th/api/get-content/meta-api", resource_type="fetch",
+        ),
         ClickCaptured(tab_id="tab-1", page_url=PAGE, ts=T0, element=element),
         RequestStarted(
             request_key="cart", tab_id="tab-1", page_url=PAGE, ts=T0 + 10, method="POST",
@@ -210,5 +214,42 @@ def test_reduced_motion_shows_every_step_without_moving(inspector: str) -> None:
             assert await label.evaluate("(e) => getComputedStyle(e).opacity") == "1"
         await page.click("#flow-again")
         assert await animations(page) == []
+
+    in_chrome(scenario)
+
+
+# ส่วนของชื่อโฮสต์ (คั่นด้วยจุด) ที่ถูกตัดขึ้นบรรทัดใหม่กลางคำ: ส่วนเดียวต้องอยู่บรรทัดเดียว
+SPLIT_HOST_LABELS = """() => {
+  const host = document.querySelector('#flow-strip .flow-host');
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  const chars = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (let i = 0; i < node.data.length; i++) chars.push([node, i]);
+  }
+  const text = chars.map(([node, i]) => node.data[i]).join('');
+  const split = [];
+  let start = 0;
+  for (const label of text.split('.')) {
+    const range = document.createRange();
+    range.setStart(...chars[start]);
+    const [node, i] = chars[start + label.length - 1];
+    range.setEnd(node, i + 1);
+    const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+    if (tops.size > 1) split.push(label);
+    start += label.length + 1;
+  }
+  return { text, split };
+}"""
+
+
+def test_long_host_wraps_only_between_its_labels(inspector: str) -> None:
+    async def scenario(browser: Browser) -> None:
+        page = await browser.new_page(viewport={"width": 1366, "height": 768})
+        await page.goto(inspector + "/")
+        await page.click("#font-bigger")  # ตัวใหญ่สุดสำหรับโปรเจกเตอร์: กล่องเซิร์ฟเวอร์แคบจนชื่อโฮสต์ต้องขึ้นบรรทัดใหม่
+        await select(page, "/get-content/meta-api")
+        result = await page.evaluate(SPLIT_HOST_LABELS)
+        assert result["text"] == "www.adviceit.co.th"  # คัดลอกได้ตรงตัว ไม่มีอักขระแทรก
+        assert result["split"] == []
 
     in_chrome(scenario)

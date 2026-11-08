@@ -293,6 +293,12 @@ function pathOf(url) {
   return parsed ? parsed.pathname + parsed.search : url;
 }
 
+/** ชื่อโฮสต์ที่ขึ้นบรรทัดใหม่ได้หลังจุดเท่านั้น (www.advice. / co.th ไม่ใช่ www.advic / e.co.th)
+ *  ใช้ <wbr> แทนอักขระพิเศษ คัดลอกชื่อโฮสต์ไปแล้วจึงตรงตัว */
+function hostWithBreaks(host) {
+  return host.split(".").flatMap((label, i) => (i === 0 ? [label] : [".", document.createElement("wbr"), label]));
+}
+
 function clockTime(epochMs) {
   return new Date(epochMs).toLocaleTimeString("th-TH", { hour12: false });
 }
@@ -934,7 +940,7 @@ class FlowStrip {
     this.lanes.request.label.replaceChildren(`${request.method} `, textSpan("flow-path", ltrText(request.path), request.url));
     const duration = durationText(this.exchange);
     this.lanes.response.label.replaceChildren(statusBadge(this.exchange), duration ? ` · ${duration}` : "");
-    this.element.querySelector(".flow-host").textContent = request.host;
+    this.element.querySelector(".flow-host").replaceChildren(...hostWithBreaks(request.host));
   }
 
   play(steps) {

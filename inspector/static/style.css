@@ -218,7 +218,7 @@ a.tool-button { text-decoration: none; }
   font-size: .9em;
   line-height: 1.3;
 }
-.flow-host { font-family: var(--mono); font-weight: 400; font-size: .85em; overflow-wrap: anywhere; }
+.flow-host { font-family: var(--mono); font-weight: 400; font-size: .85em; overflow-wrap: anywhere; }  /* ขึ้นบรรทัดใหม่ที่ <wbr> หลังจุดก่อน ตัดกลางคำเฉพาะส่วนที่ยาวกว่ากล่อง */
 .flow-strip[data-from-click="false"] [data-node="user"],
 .flow-strip[data-from-click="false"] [data-step="click"] { opacity: .35; }
 .flow-pair { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }

@@ -88,7 +88,7 @@ def test_font_size_theme_and_ethics_notice_are_remembered(inspector: str) -> Non
         assert await font_size(page) == "17px"
         assert await page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(255, 255, 255)"
 
-        # A+ สองครั้ง: 17 → 20 แล้วสุดทาง (ครั้งที่สองกดไม่ได้) ที่ 1366×768 ต้องไม่มี scroll แนวนอน
+        # A+ จนสุด: 17 → 20 แล้วปุ่มกดไม่ได้ (ลองกดครั้งที่สองด้วยก็ไม่เกิน 20) ที่ 1366×768 ต้องไม่มี scroll แนวนอน
         await page.click("#font-bigger")
         await page.click("#font-bigger", force=True)
         assert await font_size(page) == "20px"
